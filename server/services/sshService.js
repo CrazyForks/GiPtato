@@ -9,7 +9,7 @@ const Server = require('../models/Server');
 const execPromise = util.promisify(exec);
 
 // 应急模式标志，当SSH库失败时尝试使用原生命令
-const EMERGENCY_MODE = true;
+const EMERGENCY_MODE = false;
 
 class SSHService {
   constructor() {
@@ -145,10 +145,36 @@ class SSHService {
     
     // 检查连接是否正常
     try {
+      console.log(`[诊断] 检查连接，服务器ID: ${serverId}`);
+      console.log(`[诊断] 连接对象: ${conn ? '存在' : '不存在'}`);
+      
+      // 增加更完整的连接检查
+      if (!conn._sock) {
+        console.error(`[诊断] 连接套接字不存在，服务器ID: ${serverId}`);
+        delete this.connections[serverId];
+        this._updateServerStatus(serverId, 'error');
+        return false;
+      }
+      
+      console.log(`[诊断] 套接字状态: 可读=${conn._sock.readable}, 可写=${conn._sock.writable}`);
+      
       if (conn._sock && conn._sock.readable && conn._sock.writable) {
+        // 增加连接状态检查
+        if (conn._state === 'authenticated') {
+          console.log(`[诊断] 连接已认证，状态正常`);
+          return true;
+        } else if (conn._state) {
+          console.log(`[诊断] 连接状态: ${conn._state}`);
+          // 如果连接不是已认证状态但有状态值，我们尝试假设它有效
+          return true;
+        }
+        
+        console.log(`[诊断] 连接套接字正常，但状态未知`);
         return true;
       } else {
         console.error(`SSH连接异常，服务器ID: ${serverId}`);
+        console.error(`[诊断] 套接字状态异常: 可读=${conn._sock?.readable}, 可写=${conn._sock?.writable}`);
+        
         // 清理异常连接
         delete this.connections[serverId];
         this._updateServerStatus(serverId, 'error');
@@ -156,6 +182,7 @@ class SSHService {
       }
     } catch (error) {
       console.error(`检查SSH连接状态出错，服务器ID: ${serverId}`, error);
+      console.error(`[诊断] 错误详情: ${error.message}, 堆栈: ${error.stack}`);
       delete this.connections[serverId];
       this._updateServerStatus(serverId, 'error');
       return false;
@@ -222,6 +249,9 @@ class SSHService {
     }
     
     try {
+      console.log(`[诊断] 准备执行命令，服务器ID: ${serverId}, 命令: ${command}, 重试次数: ${retryCount}`);
+      console.log(`[诊断] 连接对象状态: ${this.connections[serverId] ? '存在' : '不存在'}`);
+      
       // 首先检查连接状态
       if (!this.checkConnection(serverId)) {
         console.log(`SSH连接无效，尝试重新连接，服务器ID: ${serverId}`);
@@ -238,73 +268,100 @@ class SSHService {
       const conn = this.connections[serverId];      
       console.log(`准备在服务器 ${serverId} 上执行命令: ${command}`);
       
+      // 打印连接详细信息
+      console.log(`[诊断] 连接详情: 可读=${conn._sock?.readable}, 可写=${conn._sock?.writable}, 状态=${conn._state || '未知'}`);
+      
       return new Promise((resolve, reject) => {
         const execTimeout = setTimeout(() => {
           console.error(`命令执行超时，服务器ID: ${serverId}, 命令: ${command}`);
           reject(new Error('命令执行超时，服务器可能响应缓慢'));
         }, 30000); // 30秒超时
         
-        conn.exec(command, (err, stream) => {
-          if (err) {
-            clearTimeout(execTimeout);
-            console.error(`执行命令出错: ${err.message}`);
-            
-            // 如果是连接错误，尝试重新连接后重试
-            if (err.message.includes('not connected') || err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT') {
-              if (retryCount < 2) { // 最多重试2次
-                console.log(`连接错误，尝试重试 (${retryCount + 1}/2)`);
-                delete this.connections[serverId]; // 清除失效连接
-                this._updateServerStatus(serverId, 'error');
-                
-                // 递归重试，增加重试计数
-                return setTimeout(() => {
-                  this.executeCommand(serverId, command, retryCount + 1)
-                    .then(resolve)
-                    .catch(reject);
-                }, 2000);
+        try {
+          conn.exec(command, (err, stream) => {
+            if (err) {
+              clearTimeout(execTimeout);
+              console.error(`执行命令出错: ${err.message}, 错误类型: ${err.code || '未知'}`);
+              console.error(`错误堆栈: ${err.stack || '无堆栈信息'}`);
+              
+              // 如果是连接错误，尝试重新连接后重试
+              if (err.message.includes('not connected') || err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT') {
+                if (retryCount < 2) { // 最多重试2次
+                  console.log(`连接错误，尝试重试 (${retryCount + 1}/2)`);
+                  delete this.connections[serverId]; // 清除失效连接
+                  this._updateServerStatus(serverId, 'error');
+                  
+                  // 递归重试，增加重试计数
+                  return setTimeout(() => {
+                    this.executeCommand(serverId, command, retryCount + 1)
+                      .then(resolve)
+                      .catch(reject);
+                  }, 2000);
+                }
               }
+              
+              reject(err);
+              return;
             }
-            
-            reject(err);
-            return;
-          }
 
-          let stdout = '';
-          let stderr = '';
-
-          stream.on('close', (code) => {
-            clearTimeout(execTimeout);
-            console.log(`命令执行完成，退出码: ${code}`);
-            console.log(`标准输出: ${stdout}`);
-            if (stderr) {
-              console.error(`标准错误: ${stderr}`);
-            }
+            let stdout = '';
+            let stderr = '';
             
-            resolve({
-              code,
-              stdout,
-              stderr
+            console.log(`[诊断] 命令通道已建立，等待数据...`);
+
+            stream.on('close', (code) => {
+              clearTimeout(execTimeout);
+              console.log(`命令执行完成，退出码: ${code}`);
+              console.log(`标准输出长度: ${stdout.length}`);
+              if (stderr) {
+                console.error(`标准错误: ${stderr}`);
+              }
+              
+              resolve({
+                code,
+                stdout,
+                stderr
+              });
+            });
+
+            stream.on('data', (data) => {
+              try {
+                const text = data.toString('utf8');
+                stdout += text;
+                console.log(`[诊断] 收到数据片段，长度: ${text.length}`);
+              } catch (e) {
+                console.error(`解析输出数据时发生错误: ${e.message}`);
+                stdout += '[数据解析错误]';
+              }
+            });
+
+            stream.stderr.on('data', (data) => {
+              try {
+                stderr += data.toString('utf8');
+              } catch (e) {
+                console.error(`解析错误输出时发生错误: ${e.message}`);
+                stderr += '[错误数据解析错误]';
+              }
+            });
+            
+            // 添加错误处理
+            stream.on('error', (err) => {
+              clearTimeout(execTimeout);
+              console.error(`Stream错误: ${err.message}, 类型: ${err.code || '未知'}`);
+              console.error(`Stream错误堆栈: ${err.stack || '无堆栈信息'}`);
+              reject(err);
             });
           });
-
-          stream.on('data', (data) => {
-            stdout += data.toString();
-          });
-
-          stream.stderr.on('data', (data) => {
-            stderr += data.toString();
-          });
-          
-          // 添加错误处理
-          stream.on('error', (err) => {
-            clearTimeout(execTimeout);
-            console.error(`Stream错误: ${err.message}`);
-            reject(err);
-          });
-        });
+        } catch (execError) {
+          clearTimeout(execTimeout);
+          console.error(`执行conn.exec时发生异常: ${execError.message}`);
+          console.error(`异常堆栈: ${execError.stack || '无堆栈信息'}`);
+          reject(execError);
+        }
       });
     } catch (error) {
       console.error(`执行命令过程中发生异常: ${error.message}`);
+      console.error(`异常堆栈: ${error.stack || '无堆栈信息'}`);
       
       // 如果是已知的连接错误，尝试重试
       if ((error.message.includes('连接') || error.message.includes('SSH') || 
@@ -510,7 +567,12 @@ class SSHService {
       
       console.log(`开始在服务器 ${server.name} (${server.host}) 上部署iPtato脚本`);
       
-      // 使用wget从GitHub直接下载脚本
+      // 检查用户是否有root权限
+      const checkSudo = await this.executeCommand(serverId, 'sudo -n true 2>/dev/null && echo "has_sudo" || echo "no_sudo"');
+      const hasSudo = checkSudo.stdout.includes('has_sudo');
+      console.log(`用户${hasSudo ? '有' : '没有'}sudo权限`);
+      
+      // 首先下载到用户主目录
       const downloadCommand = 'cd ~ && wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh';
       console.log(`执行下载命令: ${downloadCommand}`);
       
@@ -523,18 +585,35 @@ class SSHService {
         throw new Error(`下载脚本失败: ${result.stderr || '未知错误'}`);
       }
       
-      // 验证脚本是否下载成功
+      // 验证脚本是否下载成功到用户目录
       const checkResult = await this.executeCommand(serverId, 'test -f ~/iPtato.sh && echo "exists" || echo "not found"');
       if (checkResult.stdout.includes('not found')) {
         console.error(`脚本下载验证失败，找不到脚本文件`);
-        throw new Error('脚本文件未成功下载');
+        throw new Error('脚本文件未成功下载到用户目录');
       }
       
-      // 验证脚本权限
-      const permResult = await this.executeCommand(serverId, 'test -x ~/iPtato.sh && echo "executable" || echo "not executable"');
+      // 如果有sudo权限，也复制到/root/目录
+      if (hasSudo) {
+        console.log(`尝试将脚本复制到/root/目录`);
+        await this.executeCommand(serverId, 'sudo cp ~/iPtato.sh /root/iPtato.sh && sudo chmod +x /root/iPtato.sh');
+        
+        // 验证脚本是否成功复制到/root/
+        const rootCheck = await this.executeCommand(serverId, 'test -f /root/iPtato.sh && echo "exists" || echo "not found"');
+        if (rootCheck.stdout.includes('exists')) {
+          console.log(`脚本已成功复制到/root/目录`);
+        } else {
+          console.warn(`无法复制脚本到/root/目录，将使用用户目录的脚本`);
+        }
+      }
+      
+      // 验证至少一个位置的脚本权限
+      const permResult = await this.executeCommand(serverId, '(test -x ~/iPtato.sh && echo "home executable") || (test -x /root/iPtato.sh && echo "root executable") || echo "not executable"');
       if (permResult.stdout.includes('not executable')) {
         console.warn(`脚本权限不正确，尝试修复`);
         await this.executeCommand(serverId, 'chmod +x ~/iPtato.sh');
+        if (hasSudo) {
+          await this.executeCommand(serverId, 'sudo chmod +x /root/iPtato.sh');
+        }
       }
       
       console.log(`脚本已成功下载到服务器 ${serverId}`);
@@ -557,6 +636,8 @@ class SSHService {
    */
   async executeIptato(serverId, action) {
     try {
+      console.log(`[诊断] 准备执行iPtato脚本，服务器ID: ${serverId}, 动作: ${action}`);
+      
       // 首先检查连接状态
       if (!this.checkConnection(serverId)) {
         console.error(`尝试执行脚本时，SSH连接无效，服务器ID: ${serverId}`);
@@ -568,58 +649,80 @@ class SSHService {
         };
       }
 
-      // 检查脚本是否存在（在用户主目录或/root/目录下）
-      const scriptCheck = await this.executeCommand(serverId, 'test -f ~/iPtato.sh && echo "exists in home" || (test -f /root/iPtato.sh && echo "exists in root" || echo "not found")');
-      if (scriptCheck.stdout.includes('not found')) {
-        console.error(`脚本未找到，服务器ID: ${serverId}`);
+      // 检查脚本是否存在（优先检查/root/目录，其次检查用户主目录）
+      console.log(`[诊断] 检查脚本文件是否存在`);
+      try {
+        const scriptCheck = await this.executeCommand(serverId, 'test -f /root/iPtato.sh && echo "exists in root" || (test -f ~/iPtato.sh && echo "exists in home" || echo "not found")');
+        console.log(`[诊断] 脚本检查结果: ${scriptCheck.stdout.trim()}`);
+        
+        if (scriptCheck.stdout.includes('not found')) {
+          console.error(`脚本未找到，服务器ID: ${serverId}`);
+          return {
+            success: false,
+            output: '',
+            error: 'iPtato脚本未找到，请先部署脚本',
+            code: -1
+          };
+        }
+
+        // 确定脚本路径（优先使用root目录）
+        let scriptPath = '/root/iPtato.sh';
+        if (!scriptCheck.stdout.includes('exists in root')) {
+          scriptPath = '~/iPtato.sh';
+        }
+        console.log(`[诊断] 使用脚本路径: ${scriptPath}`);
+
+        // 检查脚本是否有执行权限
+        console.log(`[诊断] 检查脚本执行权限`);
+        const permCheck = await this.executeCommand(serverId, `test -x ${scriptPath} && echo "executable" || echo "not executable"`);
+        console.log(`[诊断] 权限检查结果: ${permCheck.stdout.trim()}`);
+        
+        if (permCheck.stdout.includes('not executable')) {
+          console.warn(`脚本权限不正确，尝试修复，服务器ID: ${serverId}`);
+          // 自动修复执行权限
+          const chmodResult = await this.executeCommand(serverId, `chmod +x ${scriptPath}`);
+          console.log(`[诊断] 权限修复结果: 退出码=${chmodResult.code}`);
+        }
+
+        // 执行脚本命令
+        const command = `bash ${scriptPath} ${action}`;
+        console.log(`[诊断] 执行脚本命令: ${command}`);
+        const result = await this.executeCommand(serverId, command);
+        console.log(`[诊断] 脚本执行完成，退出码: ${result.code}`);
+        
+        // 检查执行结果
+        if (result.code !== 0) {
+          console.error(`脚本执行失败，退出码: ${result.code}，服务器ID: ${serverId}`);
+          console.error(`[诊断] 脚本执行失败，标准输出: ${result.stdout.substring(0, 200)}${result.stdout.length > 200 ? '...' : ''}`);
+          console.error(`[诊断] 脚本执行失败，错误输出: ${result.stderr}`);
+          
+          return {
+            success: false,
+            output: result.stdout,
+            error: result.stderr || '脚本执行失败',
+            code: result.code
+          };
+        }
+
+        console.log(`脚本执行成功，服务器ID: ${serverId}`);
+        return {
+          success: true,
+          output: result.stdout,
+          error: result.stderr,
+          code: result.code
+        };
+      } catch (cmdError) {
+        console.error(`[诊断] 执行脚本检查命令失败: ${cmdError.message}`);
         return {
           success: false,
           output: '',
-          error: 'iPtato脚本未找到，请先部署脚本',
+          error: `执行脚本检查命令失败: ${cmdError.message}`,
           code: -1
         };
       }
-
-      // 确定脚本路径
-      let scriptPath = '~/iPtato.sh';
-      if (scriptCheck.stdout.includes('exists in root')) {
-        scriptPath = '/root/iPtato.sh';
-      }
-      console.log(`使用脚本路径: ${scriptPath}`);
-
-      // 检查脚本是否有执行权限
-      const permCheck = await this.executeCommand(serverId, `test -x ${scriptPath} && echo "executable" || echo "not executable"`);
-      if (permCheck.stdout.includes('not executable')) {
-        console.warn(`脚本权限不正确，尝试修复，服务器ID: ${serverId}`);
-        // 自动修复执行权限
-        await this.executeCommand(serverId, `chmod +x ${scriptPath}`);
-      }
-
-      // 执行脚本命令
-      const command = `bash ${scriptPath} ${action}`;
-      console.log(`执行脚本命令: ${command}`);
-      const result = await this.executeCommand(serverId, command);
-      
-      // 检查执行结果
-      if (result.code !== 0) {
-        console.error(`脚本执行失败，退出码: ${result.code}，服务器ID: ${serverId}`);
-        return {
-          success: false,
-          output: result.stdout,
-          error: result.stderr || '脚本执行失败',
-          code: result.code
-        };
-      }
-
-      console.log(`脚本执行成功，服务器ID: ${serverId}`);
-      return {
-        success: true,
-        output: result.stdout,
-        error: result.stderr,
-        code: result.code
-      };
     } catch (error) {
       console.error(`执行脚本异常: ${error.message}`, error);
+      console.error(`[诊断] 脚本执行异常堆栈: ${error.stack}`);
       return {
         success: false,
         output: '',

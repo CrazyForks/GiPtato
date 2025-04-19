@@ -2,6 +2,56 @@ const sshService = require('./sshService');
 
 class IptablesService {
   /**
+   * 获取脚本路径
+   * @param {string} serverId - 服务器ID
+   * @returns {Promise<string>} - 脚本路径
+   */
+  async _getScriptPath(serverId) {
+    try {
+      console.log(`[诊断] 获取脚本路径，服务器ID: ${serverId}`);
+      
+      // 检查脚本位置，首先检查/root/目录，其次检查用户主目录
+      const scriptCheck = await sshService.executeCommand(serverId, 'test -f /root/iPtato.sh && echo "root" || (test -f ~/iPtato.sh && echo "home" || echo "not found")');
+      
+      console.log(`[诊断] 脚本路径检查结果: ${scriptCheck.stdout.trim()}, 退出码: ${scriptCheck.code}`);
+      
+      if (scriptCheck.stdout.includes('not found')) {
+        console.error(`[诊断] 未找到iPtato脚本，尝试部署脚本`);
+        
+        // 尝试一次自动部署
+        try {
+          console.log(`[诊断] 自动部署iPtato脚本`);
+          await sshService.deployIptato(serverId);
+          
+          // 再次检查脚本位置，优先检查/root/目录
+          const recheck = await sshService.executeCommand(serverId, 'test -f /root/iPtato.sh && echo "root" || (test -f ~/iPtato.sh && echo "home" || echo "not found")');
+          console.log(`[诊断] 部署后再次检查，结果: ${recheck.stdout.trim()}`);
+          
+          if (recheck.stdout.includes('not found')) {
+            throw new Error('即使尝试部署后仍未找到iPtato脚本');
+          }
+          
+          return recheck.stdout.includes('root') ? '/root/iPtato.sh' : '~/iPtato.sh';
+        } catch (deployError) {
+          console.error(`[诊断] 自动部署失败: ${deployError.message}`);
+          throw new Error(`未找到iPtato脚本且自动部署失败: ${deployError.message}`);
+        }
+      }
+      
+      const scriptPath = scriptCheck.stdout.includes('root') ? '/root/iPtato.sh' : '~/iPtato.sh';
+      console.log(`[诊断] 使用脚本路径: ${scriptPath}`);
+      return scriptPath;
+    } catch (error) {
+      console.error(`[诊断] 获取脚本路径失败: ${error.message}`);
+      console.error(`[诊断] 错误堆栈: ${error.stack}`);
+      
+      // 出错时默认返回可能的路径，优先使用/root/路径
+      console.warn(`[警告] 由于获取脚本路径出错，默认使用/root/iPtato.sh路径`);
+      return '/root/iPtato.sh';
+    }
+  }
+
+  /**
    * 检查前置条件
    * @param {string} serverId - 服务器ID
    * @returns {Promise<object>} - 检查结果
@@ -17,14 +67,16 @@ class IptablesService {
         };
       }
       
-      // 检查脚本是否存在
-      const scriptCheck = await sshService.executeCommand(serverId, 'test -f /root/iPtato.sh && echo "exists" || echo "not found"');
+      // 检查脚本是否存在（优先检查/root/目录，其次检查用户主目录）
+      const scriptCheck = await sshService.executeCommand(serverId, 'test -f /root/iPtato.sh && echo "exists in root" || (test -f ~/iPtato.sh && echo "exists in home" || echo "not found")');
       if (scriptCheck.stdout.includes('not found')) {
         return {
           success: false,
           error: 'iPtato脚本未部署，请先部署脚本'
         };
       }
+      
+      console.log(`[诊断] 前置检查：脚本位置 ${scriptCheck.stdout.trim()}`);
       
       return { success: true };
     } catch (error) {
@@ -155,19 +207,12 @@ class IptablesService {
    */
   async blockCustomPorts(serverId, ports) {
     try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      // 直接使用命令行参数模式
-      const result = await sshService.executeCommand(serverId, `bash /root/iPtato.sh 4 "${ports}"`);
+      const result = await this._executeIptatoCommand(serverId, 4, ports);
       
       return {
-        success: result.code === 0,
-        data: result.stdout,
-        error: result.stderr
+        success: result.success,
+        data: result.output,
+        error: result.error
       };
     } catch (error) {
       return {
@@ -186,19 +231,12 @@ class IptablesService {
    */
   async blockCustomKeyword(serverId, keyword) {
     try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      // 直接使用命令行参数模式
-      const result = await sshService.executeCommand(serverId, `bash /root/iPtato.sh 5 "${keyword}"`);
+      const result = await this._executeIptatoCommand(serverId, 5, keyword);
       
       return {
-        success: result.code === 0,
-        data: result.stdout,
-        error: result.stderr
+        success: result.success,
+        data: result.output,
+        error: result.error
       };
     } catch (error) {
       return {
@@ -301,19 +339,12 @@ class IptablesService {
    */
   async unblockCustomPorts(serverId, ports) {
     try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      // 直接使用命令行参数模式
-      const result = await sshService.executeCommand(serverId, `bash /root/iPtato.sh 9 "${ports}"`);
+      const result = await this._executeIptatoCommand(serverId, 9, ports);
       
       return {
-        success: result.code === 0,
-        data: result.stdout,
-        error: result.stderr
+        success: result.success,
+        data: result.output,
+        error: result.error
       };
     } catch (error) {
       return {
@@ -332,19 +363,12 @@ class IptablesService {
    */
   async unblockCustomKeyword(serverId, keyword) {
     try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      // 直接使用命令行参数模式
-      const result = await sshService.executeCommand(serverId, `bash /root/iPtato.sh 10 "${keyword}"`);
+      const result = await this._executeIptatoCommand(serverId, 10, keyword);
       
       return {
-        success: result.code === 0,
-        data: result.stdout,
-        error: result.stderr
+        success: result.success,
+        data: result.output,
+        error: result.error
       };
     } catch (error) {
       return {
@@ -397,15 +421,43 @@ class IptablesService {
       }
       
       const result = await sshService.executeIptato(serverId, 13);
+      
+      // 处理结果
+      if (result.success) {
+        const output = result.output || '';
+        
+        // 检查是否明确表示没有端口
+        if (output.includes('当前未放行任何端口') || 
+            output.includes('No allowed ports')) {
+          console.log(`[诊断] 检测到空端口列表`);
+          return {
+            success: true,
+            data: { tcp: [], udp: [] },
+            error: null
+          };
+        }
+        
+        // 解析输出
+        const parsedData = this._parsePortOutput(output);
+        console.log(`[诊断] 解析端口列表结果: TCP=${parsedData.tcp.length}个, UDP=${parsedData.udp.length}个`);
+        
+        return {
+          success: true,
+          data: parsedData,
+          error: null
+        };
+      }
+      
       return {
         success: result.success,
-        data: result.output,
+        data: { tcp: [], udp: [] },
         error: result.error
       };
     } catch (error) {
+      console.error(`获取入网端口失败: ${error.message}`);
       return {
         success: false,
-        data: null,
+        data: { tcp: [], udp: [] },
         error: `获取入网端口失败: ${error.message}`
       };
     }
@@ -425,15 +477,43 @@ class IptablesService {
       }
       
       const result = await sshService.executeIptato(serverId, 14);
+      
+      // 处理结果
+      if (result.success) {
+        const output = result.output || '';
+        
+        // 检查是否明确表示没有IP
+        if (output.includes('当前未放行任何 IP') || 
+            output.includes('No allowed IPs')) {
+          console.log(`[诊断] 检测到空IP列表`);
+          return {
+            success: true,
+            data: [],
+            error: null
+          };
+        }
+        
+        // 解析输出
+        const parsedData = this._parseIPOutput(output);
+        console.log(`[诊断] 解析IP列表结果: ${parsedData.length}个IP`);
+        
+        return {
+          success: true,
+          data: parsedData,
+          error: null
+        };
+      }
+      
       return {
         success: result.success,
-        data: result.output,
+        data: [],
         error: result.error
       };
     } catch (error) {
+      console.error(`获取入网IP失败: ${error.message}`);
       return {
         success: false,
-        data: null,
+        data: [],
         error: `获取入网IP失败: ${error.message}`
       };
     }
@@ -447,19 +527,12 @@ class IptablesService {
    */
   async allowInboundPorts(serverId, ports) {
     try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      // 直接使用命令行参数模式
-      const result = await sshService.executeCommand(serverId, `bash /root/iPtato.sh 15 "${ports}"`);
+      const result = await this._executeIptatoCommand(serverId, 15, ports);
       
       return {
-        success: result.code === 0,
-        data: result.stdout,
-        error: result.stderr
+        success: result.success,
+        data: result.output,
+        error: result.error
       };
     } catch (error) {
       return {
@@ -478,19 +551,12 @@ class IptablesService {
    */
   async disallowInboundPorts(serverId, ports) {
     try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      // 直接使用命令行参数模式
-      const result = await sshService.executeCommand(serverId, `bash /root/iPtato.sh 16 "${ports}"`);
+      const result = await this._executeIptatoCommand(serverId, 16, ports);
       
       return {
-        success: result.code === 0,
-        data: result.stdout,
-        error: result.stderr
+        success: result.success,
+        data: result.output,
+        error: result.error
       };
     } catch (error) {
       return {
@@ -509,19 +575,12 @@ class IptablesService {
    */
   async allowInboundIPs(serverId, ips) {
     try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      // 直接使用命令行参数模式
-      const result = await sshService.executeCommand(serverId, `bash /root/iPtato.sh 17 "${ips}"`);
+      const result = await this._executeIptatoCommand(serverId, 17, ips);
       
       return {
-        success: result.code === 0,
-        data: result.stdout,
-        error: result.stderr
+        success: result.success,
+        data: result.output,
+        error: result.error
       };
     } catch (error) {
       return {
@@ -540,19 +599,12 @@ class IptablesService {
    */
   async disallowInboundIPs(serverId, ips) {
     try {
-      // 检查前置条件
-      const prereqCheck = await this._checkPrerequisites(serverId);
-      if (!prereqCheck.success) {
-        return prereqCheck;
-      }
-      
-      // 直接使用命令行参数模式
-      const result = await sshService.executeCommand(serverId, `bash /root/iPtato.sh 18 "${ips}"`);
+      const result = await this._executeIptatoCommand(serverId, 18, ips);
       
       return {
-        success: result.code === 0,
-        data: result.stdout,
-        error: result.stderr
+        success: result.success,
+        data: result.output,
+        error: result.error
       };
     } catch (error) {
       return {
@@ -616,6 +668,145 @@ class IptablesService {
         data: null,
         error: `清空所有规则失败: ${error.message}`
       };
+    }
+  }
+
+  /**
+   * 执行iPtato脚本命令
+   * @param {string} serverId - 服务器ID
+   * @param {number} action - 动作代码
+   * @param {string} params - 命令参数
+   * @returns {Promise<object>} - 执行结果
+   */
+  async _executeIptatoCommand(serverId, action, params = '') {
+    try {
+      console.log(`[诊断] 准备执行iPtato命令，服务器ID: ${serverId}, 动作: ${action}, 参数: ${params}`);
+      
+      // 检查前置条件
+      const prereqCheck = await this._checkPrerequisites(serverId);
+      if (!prereqCheck.success) {
+        console.log(`[诊断] 前置条件检查失败: ${prereqCheck.error}`);
+        return prereqCheck;
+      }
+      
+      // 设置操作超时
+      const timeout = setTimeout(() => {
+        console.error(`[诊断] 操作超时，服务器ID: ${serverId}, 动作: ${action}`);
+      }, 15000); // 15秒警告
+      
+      try {
+        let result;
+        
+        // 优先使用sshService的executeIptato方法
+        if (!params) {
+          console.log(`[诊断] 使用executeIptato执行命令，动作: ${action}`);
+          result = await sshService.executeIptato(serverId, action);
+        } else {
+          // 对于需要参数的命令，获取脚本路径并执行
+          console.log(`[诊断] 获取脚本路径并执行命令`);
+          const scriptPath = await this._getScriptPath(serverId);
+          console.log(`[诊断] 获取到脚本路径: ${scriptPath}`);
+          
+          result = await sshService.executeCommand(serverId, `bash ${scriptPath} ${action} "${params}"`);
+          
+          // 格式化返回结果，保持一致性
+          result = {
+            success: result.code === 0,
+            output: result.stdout,
+            error: result.stderr,
+            code: result.code
+          };
+        }
+        
+        clearTimeout(timeout);
+        console.log(`[诊断] 命令执行完成，结果: ${result.success ? '成功' : '失败'}`);
+        
+        return result;
+      } catch (commandError) {
+        clearTimeout(timeout);
+        console.error(`[诊断] 执行命令过程中发生错误: ${commandError.message}`);
+        console.error(`[诊断] 错误堆栈: ${commandError.stack}`);
+        
+        return {
+          success: false,
+          output: '',
+          error: `执行命令失败: ${commandError.message}`,
+          code: -1
+        };
+      }
+    } catch (error) {
+      console.error(`[诊断] _executeIptatoCommand方法异常: ${error.message}`);
+      console.error(`[诊断] 异常堆栈: ${error.stack}`);
+      
+      return {
+        success: false,
+        output: '',
+        error: `执行iPtato命令失败: ${error.message}`,
+        code: -1
+      };
+    }
+  }
+
+  /**
+   * 解析端口列表输出
+   * @param {string} output - 脚本原始输出
+   * @returns {Object} - 解析后的结构化数据
+   */
+  _parsePortOutput(output) {
+    try {
+      // 移除ANSI颜色代码
+      output = output.replace(/\u001b\[\d+(;\d+)?m/g, '');
+      
+      // 初始化结果
+      const result = {
+        tcp: [],
+        udp: []
+      };
+      
+      // 提取TCP部分
+      const tcpMatch = output.match(/TCP\s+([\s\S]*?)(?=\n={3,}|\nUDP)/);
+      if (tcpMatch && tcpMatch[1]) {
+        // 提取数字
+        const tcpPorts = tcpMatch[1].match(/\d+/g);
+        if (tcpPorts) {
+          result.tcp = tcpPorts.map(port => parseInt(port, 10));
+        }
+      }
+      
+      // 提取UDP部分
+      const udpMatch = output.match(/UDP\s+([\s\S]*?)(?=\n={3,}|$)/);
+      if (udpMatch && udpMatch[1]) {
+        // 提取数字
+        const udpPorts = udpMatch[1].match(/\d+/g);
+        if (udpPorts) {
+          result.udp = udpPorts.map(port => parseInt(port, 10));
+        }
+      }
+      
+      return result;
+    } catch (error) {
+      console.error(`[诊断] 解析端口输出失败: ${error.message}`);
+      return { tcp: [], udp: [] };
+    }
+  }
+  
+  /**
+   * 解析IP列表输出
+   * @param {string} output - 脚本原始输出
+   * @returns {Array} - 解析后的IP列表
+   */
+  _parseIPOutput(output) {
+    try {
+      // 移除ANSI颜色代码
+      output = output.replace(/\u001b\[\d+(;\d+)?m/g, '');
+      
+      // 提取所有IP地址
+      const ipAddresses = output.match(/\d+\.\d+\.\d+\.\d+/g) || [];
+      
+      return ipAddresses;
+    } catch (error) {
+      console.error(`[诊断] 解析IP输出失败: ${error.message}`);
+      return [];
     }
   }
 }

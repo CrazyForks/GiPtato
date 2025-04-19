@@ -8,7 +8,7 @@ export PATH
 #		Blog: 计划中
 #=================================================
 
-sh_ver="1.0.20"
+sh_ver="1.0.21"
 Green_font_prefix="\033[32m"
 Red_font_prefix="\033[31m"
 Green_background_prefix="\033[42;37m"
@@ -746,17 +746,264 @@ Update_Shell(){
 	echo -e "脚本已更新为最新版本[ ${sh_new_ver} ] !(注意：因为更新方式为直接覆盖当前运行的脚本，所以可能下面会提示一些报错，无视即可)" && exit 0
 }
 
+# 使用方法帮助
+usage() {
+    echo -e "使用方法: $0 [参数] [额外参数]"
+    echo -e "参数说明:"
+    echo -e "  0-21: 对应菜单中的功能"
+    echo -e "需要额外参数的功能:"
+    echo -e "  4: 指定要封禁的端口，例如: $0 4 80,443"
+    echo -e "  5: 指定要封禁的关键词，例如: $0 5 youtube.com"
+    echo -e "  9: 指定要解封的端口，例如: $0 9 80,443"
+    echo -e "  10: 指定要解封的关键词，例如: $0 10 youtube.com"
+    echo -e "  15: 指定要放行的端口，例如: $0 15 80,443"
+    echo -e "  16: 指定要取消放行的端口，例如: $0 16 80,443"
+    echo -e "  17: 指定要放行的IP，例如: $0 17 1.2.3.4"
+    echo -e "  18: 指定要取消放行的IP，例如: $0 18 1.2.3.4"
+}
+
+# 非交互式处理端口封禁
+non_interactive_port_out() {
+    PORT=$1
+    if [[ -z "${PORT}" ]]; then
+        echo "错误: 未指定端口"
+        exit 1
+    fi
+    s="A"
+    set_out_ports
+    echo -e "${Info} 已封禁端口 [ ${PORT} ] !\n"
+}
+
+# 非交互式处理端口解封
+non_interactive_port_unban() {
+    PORT=$1
+    if [[ -z "${PORT}" ]]; then
+        echo "错误: 未指定端口"
+        exit 1
+    fi
+    s="D"
+    set_out_ports
+    echo -e "${Info} 已解封端口 [ ${PORT} ] !\n"
+}
+
+# 非交互式处理关键词封禁
+non_interactive_keyword_ban() {
+    key_word=$1
+    if [[ -z "${key_word}" ]]; then
+        echo "错误: 未指定关键词"
+        exit 1
+    fi
+    s="A"
+    set_out_keywords
+    echo -e "${Info} 已封禁关键词 [ ${key_word} ] !\n"
+}
+
+# 非交互式处理关键词解封
+non_interactive_keyword_unban() {
+    key_word=$1
+    if [[ -z "${key_word}" ]]; then
+        echo "错误: 未指定关键词"
+        exit 1
+    fi
+    s="D"
+    set_out_keywords
+    echo -e "${Info} 已解封关键词 [ ${key_word} ] !\n"
+}
+
+# 非交互式处理入网端口放行
+non_interactive_inport_allow() {
+    PORT=$1
+    if [[ -z "${PORT}" ]]; then
+        echo "错误: 未指定端口"
+        exit 1
+    fi
+    s="A"
+    set_in_ports
+    echo -e "${Info} 已放行入网端口 [ ${PORT} ] !\n"
+}
+
+# 非交互式处理入网端口取消放行
+non_interactive_inport_disallow() {
+    PORT=$1
+    if [[ -z "${PORT}" ]]; then
+        echo "错误: 未指定端口"
+        exit 1
+    fi
+    s="D"
+    set_in_ports
+    echo -e "${Info} 已取消放行入网端口 [ ${PORT} ] !\n"
+}
+
+# 非交互式处理入网IP放行
+non_interactive_inip_allow() {
+    IP=$1
+    if [[ -z "${IP}" ]]; then
+        echo "错误: 未指定IP"
+        exit 1
+    fi
+    s="A"
+    set_in_ips
+    echo -e "${Info} 已放行入网IP [ ${IP} ] !\n"
+}
+
+# 非交互式处理入网IP取消放行
+non_interactive_inip_disallow() {
+    IP=$1
+    if [[ -z "${IP}" ]]; then
+        echo "错误: 未指定IP"
+        exit 1
+    fi
+    s="D"
+    set_in_ips
+    echo -e "${Info} 已取消放行入网IP [ ${IP} ] !\n"
+}
+
 check_system
 var_v4_v6_iptables
 check_run
 action=$1
+extra_param=$2
+
 if [[ ! -z $action ]]; then
-	[[ $action = "banbt" ]] && Ban_BT && exit 0
-	[[ $action = "banspam" ]] && Ban_SPAM && exit 0
-	[[ $action = "banall" ]] && Ban_ALL && exit 0
-	[[ $action = "unbanbt" ]] && UnBan_BT && exit 0
-	[[ $action = "unbanspam" ]] && UnBan_SPAM && exit 0
-	[[ $action = "unbanall" ]] && UnBan_ALL && exit 0
+	# 支持数字参数，直接执行对应功能
+	case "$action" in
+		0)
+		view_all_disable_out
+		exit 0
+		;;
+		1)
+		disable_btpt
+		exit 0
+		;;
+		2)
+		disable_spam
+		exit 0
+		;;
+		3)
+		disable_all_out
+		exit 0
+		;;
+		4)
+		if [[ -z $extra_param ]]; then
+			disable_want_port_out
+		else
+			non_interactive_port_out "$extra_param"
+		fi
+		exit 0
+		;;
+		5)
+		if [[ -z $extra_param ]]; then
+			disable_want_keyworld_out
+		else
+			non_interactive_keyword_ban "$extra_param"
+		fi
+		exit 0
+		;;
+		6)
+		able_btpt
+		exit 0
+		;;
+		7)
+		able_spam
+		exit 0
+		;;
+		8)
+		able_all_out
+		exit 0
+		;;
+		9)
+		if [[ -z $extra_param ]]; then
+			able_want_port_out
+		else
+			non_interactive_port_unban "$extra_param"
+		fi
+		exit 0
+		;;
+		10)
+		if [[ -z $extra_param ]]; then
+			able_want_keyworld_out
+		else
+			non_interactive_keyword_unban "$extra_param"
+		fi
+		exit 0
+		;;
+		11)
+		able_all_keyworld_out
+		exit 0
+		;;
+		12)
+		diable_blocklist_out
+		exit 0
+		;;
+		13)
+		display_in_port
+		exit 0
+		;;
+		14)
+		display_in_ip
+		exit 0
+		;;
+		15)
+		if [[ -z $extra_param ]]; then
+			able_want_port_in
+		else
+			non_interactive_inport_allow "$extra_param"
+		fi
+		exit 0
+		;;
+		16)
+		if [[ -z $extra_param ]]; then
+			disable_want_port_in
+		else
+			non_interactive_inport_disallow "$extra_param"
+		fi
+		exit 0
+		;;
+		17)
+		if [[ -z $extra_param ]]; then
+			able_in_ips
+		else
+			non_interactive_inip_allow "$extra_param"
+		fi
+		exit 0
+		;;
+		18)
+		if [[ -z $extra_param ]]; then
+			disable_want_ip_in
+		else
+			non_interactive_inip_disallow "$extra_param"
+		fi
+		exit 0
+		;;
+		19)
+		display_ssh
+		exit 0
+		;;
+		20)
+		clear_rebuild_ipta
+		exit 0
+		;;
+		21)
+		Update_Shell
+		exit 0
+		;;
+		"help"|"-h"|"--help")
+		usage
+		exit 0
+		;;
+		# 兼容旧的字符串参数
+		"banbt") disable_btpt && exit 0 ;;
+		"banspam") disable_spam && exit 0 ;;
+		"banall") disable_all_out && exit 0 ;;
+		"unbanbt") able_btpt && exit 0 ;;
+		"unbanspam") able_spam && exit 0 ;;
+		"unbanall") able_all_out && exit 0 ;;
+		*)
+		echo "无效的参数: $action"
+		usage
+		exit 1
+		;;
+	esac
 fi
 echo && echo -e " iptables防火墙 管理脚本 ${Red_font_prefix}[v${sh_ver}]${Font_color_suffix}
   -- 基于逗比脚本修改 在此感谢大佬--

@@ -4,6 +4,14 @@ const path = require('path');
 const fs = require('fs');
 require('dotenv').config();
 
+// 打印环境变量
+console.log('===== 服务器配置 =====');
+console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
+console.log(`PORT: ${process.env.PORT || 3001}`);
+console.log(`CORS_ORIGIN: ${process.env.CORS_ORIGIN}`);
+console.log(`STABLE_MODE: ${process.env.STABLE_MODE}`);
+console.log('======================');
+
 // 导入路由
 const serverRoutes = require('./routes/serverRoutes');
 const rulesRoutes = require('./routes/rulesRoutes');
@@ -11,8 +19,16 @@ const rulesRoutes = require('./routes/rulesRoutes');
 // 创建Express应用
 const app = express();
 
+// CORS配置
+const corsOptions = {
+  origin: process.env.CORS_ORIGIN || 'http://localhost:8080',
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+console.log(`CORS配置: 允许来源 ${corsOptions.origin}`);
+
 // 中间件
-app.use(cors());
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -88,7 +104,7 @@ app.use((err, req, res, next) => {
 });
 
 // 启动服务器
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`服务器运行在 http://localhost:${PORT}`);
 }); 
