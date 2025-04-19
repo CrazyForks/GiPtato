@@ -38,10 +38,19 @@
       >
         <template slot-scope="scope">
           <el-tag
-            :type="scope.row.status === 'online' ? 'success' : (scope.row.status === 'error' ? 'danger' : 'info')"
+            :type="getStatusTagType(scope.row.status)"
           >
             {{ statusText[scope.row.status] }}
           </el-tag>
+          <el-tooltip content="刷新状态" placement="top">
+            <el-button 
+              type="text" 
+              icon="el-icon-refresh" 
+              circle 
+              size="mini" 
+              @click="checkServerStatus(scope.row)"
+            ></el-button>
+          </el-tooltip>
         </template>
       </el-table-column>
       <el-table-column
@@ -53,17 +62,23 @@
             @click="handleEdit(scope.row)"
           >编辑</el-button>
           <el-button
-            v-if="scope.row.status !== 'online'"
+            v-if="scope.row.status !== 'online' && scope.row.status !== 'connecting' && scope.row.status !== 'disconnecting'"
             size="mini"
             type="success"
             @click="handleConnect(scope.row)"
           >连接</el-button>
           <el-button
-            v-else
+            v-else-if="scope.row.status === 'online'"
             size="mini"
             type="warning"
             @click="handleDisconnect(scope.row)"
+            :loading="disconnectingServers[scope.row._id]"
           >断开</el-button>
+          <el-button
+            v-else
+            size="mini"
+            disabled
+          >{{ statusText[scope.row.status] }}</el-button>
           <el-button
             v-if="scope.row.status === 'online'"
             size="mini"
@@ -113,12 +128,26 @@ export default {
       statusText: {
         'online': '在线',
         'offline': '离线',
-        'error': '错误'
-      }
+        'error': '错误',
+        'connecting': '连接中',
+        'disconnecting': '断开中'
+      },
+      disconnectingServers: {},
+      statusCheckInterval: null
     };
   },
   created() {
     this.fetchServers();
+    // 每30秒自动检查一次服务器状态
+    this.statusCheckInterval = setInterval(() => {
+      this.checkAllServersStatus();
+    }, 30000);
+  },
+  beforeDestroy() {
+    // 组件销毁时清除定时器
+    if (this.statusCheckInterval) {
+      clearInterval(this.statusCheckInterval);
+    }
   },
   methods: {
     ...mapActions('servers', [
@@ -127,7 +156,8 @@ export default {
       'updateServer',
       'deleteServer',
       'connectServer',
-      'disconnectServer'
+      'disconnectServer',
+      'checkStatus'
     ]),
     async fetchServers() {
       this.loading = true;
@@ -188,29 +218,91 @@ export default {
     async handleConnect(server) {
       try {
         this.loading = true;
+        
+        // 先更新本地状态为"连接中"
+        const index = this.servers.findIndex(s => s._id === server._id);
+        if (index !== -1) {
+          this.$set(this.servers[index], 'status', 'connecting');
+        }
+        
+        // 执行连接操作
         await this.connectServer(server._id);
         this.$message.success('服务器连接成功');
-        this.fetchServers();
+        
+        // 强制刷新所有服务器状态
+        await this.fetchServers();
       } catch (error) {
         this.$message.error('连接服务器失败: ' + error.message);
+        // 如果失败，再次获取当前状态
+        await this.checkServerStatus(server);
       } finally {
         this.loading = false;
       }
     },
     async handleDisconnect(server) {
       try {
-        this.loading = true;
+        // 设置断开中状态
+        this.$set(this.disconnectingServers, server._id, true);
+        
+        // 先更新本地状态为"断开中"
+        const index = this.servers.findIndex(s => s._id === server._id);
+        if (index !== -1) {
+          this.$set(this.servers[index], 'status', 'disconnecting');
+        }
+        
+        // 执行断开操作
         await this.disconnectServer(server._id);
         this.$message.success('服务器断开连接成功');
-        this.fetchServers();
+        
+        // 立即更新本地状态
+        if (index !== -1) {
+          this.$set(this.servers[index], 'status', 'offline');
+        }
+        
+        // 强制刷新所有服务器状态
+        await this.fetchServers();
       } catch (error) {
         this.$message.error('断开服务器连接失败: ' + error.message);
+        // 如果失败，再次获取当前状态
+        await this.checkServerStatus(server);
       } finally {
-        this.loading = false;
+        // 清除断开中状态
+        this.$set(this.disconnectingServers, server._id, false);
       }
     },
     handleManageRules(server) {
       this.$router.push({ name: 'rules', params: { serverId: server._id } });
+    },
+    async checkServerStatus(server) {
+      try {
+        const response = await this.checkStatus(server._id);
+        // 更新当前服务器状态
+        const index = this.servers.findIndex(s => s._id === server._id);
+        if (index !== -1) {
+          this.$set(this.servers[index], 'status', response.data.data.status);
+        }
+      } catch (error) {
+        console.error('检查服务器状态失败:', error);
+      }
+    },
+    async checkAllServersStatus() {
+      for (const server of this.servers) {
+        await this.checkServerStatus(server);
+      }
+    },
+    getStatusTagType(status) {
+      switch (status) {
+        case 'online':
+          return 'success';
+        case 'error':
+          return 'danger';
+        case 'connecting':
+          return 'info';
+        case 'disconnecting':
+          return 'warning';
+        default:
+          return '';
+      }
     }
   }
 };

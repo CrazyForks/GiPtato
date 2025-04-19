@@ -4,7 +4,6 @@ import Home from '../views/Home.vue';
 import Servers from '../views/Servers.vue';
 import Rules from '../views/Rules.vue';
 import Login from '../views/Login.vue';
-import Register from '../views/Register.vue';
 import store from '../store';
 
 Vue.use(VueRouter);
@@ -33,11 +32,6 @@ const routes = [
     path: '/login',
     name: 'login',
     component: Login
-  },
-  {
-    path: '/register',
-    name: 'register',
-    component: Register
   }
 ];
 

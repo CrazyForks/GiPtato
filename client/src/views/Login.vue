@@ -24,9 +24,11 @@
         </el-form-item>
         <el-form-item>
           <el-button type="primary" :loading="loading" @click="handleLogin">登录</el-button>
-          <el-button @click="goToRegister">注册账号</el-button>
         </el-form-item>
       </el-form>
+      <div class="login-tip">
+        <small>默认管理员账户：admin / admin123</small>
+      </div>
     </el-card>
   </div>
 </template>
@@ -83,10 +85,6 @@ export default {
       } finally {
         this.loading = false;
       }
-    },
-    
-    goToRegister() {
-      this.$router.push('/register');
     }
   },
   // 阻止已登录用户访问登录页
@@ -118,5 +116,11 @@ export default {
   text-align: center;
   margin: 0;
   color: #409EFF;
+}
+
+.login-tip {
+  text-align: center;
+  margin-top: 10px;
+  color: #909399;
 }
 </style> 

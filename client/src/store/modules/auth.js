@@ -42,7 +42,10 @@ const actions = {
     }
   },
   
-  // 注册
+  /**
+   * 注册功能 - 仅供API调用，前端不使用
+   * 保留此代码以便将来通过API工具或后台管理使用
+   */
   async register({ commit, dispatch }, credentials) {
     commit('SET_LOADING', true);
     try {

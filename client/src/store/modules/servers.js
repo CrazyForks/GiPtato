@@ -127,6 +127,18 @@ const actions = {
     }
   },
   
+  async checkStatus({ commit }, id) {
+    commit('setError', null);
+    
+    try {
+      const response = await axios.get(`${API_URL}/${id}/status`);
+      return response.data;
+    } catch (error) {
+      commit('setError', error.response ? error.response.data.message : error.message);
+      throw error;
+    }
+  },
+  
   async executeCommand({ commit }, { serverId, command }) {
     commit('setLoading', true);
     commit('setError', null);

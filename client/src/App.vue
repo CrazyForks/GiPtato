@@ -6,7 +6,7 @@
       </div>
       <div class="header-right">
         <span v-if="currentUser">{{ currentUser.username }}</span>
-        <el-button type="text" @click="handleLogout">退出登录</el-button>
+        <el-button type="text" class="logout-btn" @click="handleLogout">退出登录</el-button>
       </div>
     </el-header>
     <router-view />
@@ -78,5 +78,17 @@ html, body {
 
 .header-right span {
   margin-right: 10px;
+}
+
+.logout-btn {
+  color: white !important;
+  font-weight: bold;
+  border: 1px solid white;
+  border-radius: 4px;
+  padding: 5px 10px;
+}
+
+.logout-btn:hover {
+  background-color: rgba(255, 255, 255, 0.2);
 }
 </style> 
