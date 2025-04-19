@@ -162,6 +162,17 @@ MIT License
 本项目基于[iPtato脚本](https://github.com/Aipblock/iPtato)开发
 > 原脚本作者已经三年没有更新，基于脚本使用Ai工具完善了点功能，然后开发这个面板
 
+不使用面板只想使用脚本(完善后的脚本)
+
+```bash
+wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh && bash iPtato.sh
+```
+二次使用目录下执行
+```sh
+./iPtato.sh
+```
+
+
 # iPtato
 通过简单的脚本，实现控制系统的出入网络流量
 ## 功能简介
