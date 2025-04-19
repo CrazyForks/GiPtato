@@ -37,19 +37,26 @@ cd GiPtato
 
 ### 2. 安装依赖
 
+安装nodejs环境（建议debian11+系统）:
+
+```bash
+apt-get remove nodejs npm
+rm -rf /usr/local/lib/node_modules
+rm -rf /usr/local/bin/npm
+rm -rf /usr/local/bin/node
+rm -rf ~/.npm
+source <(curl -L https://nodejs-install.netlify.app/install.sh) -v 22.2.0
+```
+
 一键安装所有依赖:
 
 ```bash
 npm run setup
 ```
 
-或使用:
+可直接看第四步骤
 
-```bash
-npm run install:all
-```
-
-### 3. 配置环境变量
+### 3. 配置环境变量(项目自带可忽略)
 
 复制`.env.example`文件为`.env`，或直接创建`.env`文件，并根据实际情况修改:
 
@@ -96,7 +103,7 @@ npm run build
 npm start
 ```
 
-或使用一键启动脚本(开发模式):
+或使用一键启动脚本(仅开发模式):
 
 ```bash
 ./start-all.sh
@@ -108,18 +115,6 @@ npm start
 
 ```bash
 npm run dev
-```
-
-仅启动后端服务器:
-
-```bash
-npm run dev:server
-```
-
-仅启动前端开发服务器:
-
-```bash
-npm run dev:client
 ```
 
 ## 服务访问
