@@ -3,10 +3,10 @@
     {
       "id": "1745080953892",
       "username": "admin",
-      "password": "$2b$10$5X2sAFjd8EHnoM4O6NHoH.qTu0.k6EhBb1wz72b73ZLKHBQfPgb06",
+      "password": "$2b$10$ImfljVlZ2RGq5lmHC9a0KuZaeXv1AFgTTGKNCYhS0sZJUUvPMHaSG",
       "isAdmin": true,
       "createdAt": "2025-04-19T16:42:33.892Z",
-      "updatedAt": "2025-04-19T17:13:58.347Z"
+      "updatedAt": "2025-04-19T17:42:36.935Z"
     }
   ]
 }
