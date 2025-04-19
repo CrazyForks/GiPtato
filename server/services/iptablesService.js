@@ -161,22 +161,8 @@ class IptablesService {
         return prereqCheck;
       }
       
-      // 这个操作需要交互式输入，我们需要用特殊方式处理
-      // 创建一个临时脚本来处理交互式输入
-      const tempScriptContent = `#!/bin/bash
-echo "${ports}" | bash /root/iPtato.sh 4
-exit $?
-`;
-      
-      // 上传临时脚本
-      const tempScriptPath = '/tmp/iPtato_block_ports.sh';
-      await sshService.executeCommand(serverId, `echo '${tempScriptContent}' > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
-      
-      // 执行临时脚本
-      const result = await sshService.executeCommand(serverId, `bash ${tempScriptPath}`);
-      
-      // 清理临时脚本
-      await sshService.executeCommand(serverId, `rm ${tempScriptPath}`);
+      // 直接使用命令行参数模式
+      const result = await sshService.executeCommand(serverId, `bash /root/iPtato.sh 4 "${ports}"`);
       
       return {
         success: result.code === 0,
@@ -206,22 +192,8 @@ exit $?
         return prereqCheck;
       }
       
-      // 创建一个临时脚本来处理交互式输入
-      const tempScriptContent = `#!/bin/bash
-echo "1" | bash /root/iPtato.sh 5 > /dev/null
-echo "${keyword}" | bash /root/iPtato.sh
-exit $?
-`;
-      
-      // 上传临时脚本
-      const tempScriptPath = '/tmp/iPtato_block_keyword.sh';
-      await sshService.executeCommand(serverId, `echo '${tempScriptContent}' > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
-      
-      // 执行临时脚本
-      const result = await sshService.executeCommand(serverId, `bash ${tempScriptPath}`);
-      
-      // 清理临时脚本
-      await sshService.executeCommand(serverId, `rm ${tempScriptPath}`);
+      // 直接使用命令行参数模式
+      const result = await sshService.executeCommand(serverId, `bash /root/iPtato.sh 5 "${keyword}"`);
       
       return {
         success: result.code === 0,
@@ -335,21 +307,8 @@ exit $?
         return prereqCheck;
       }
       
-      // 创建一个临时脚本来处理交互式输入
-      const tempScriptContent = `#!/bin/bash
-echo "${ports}" | bash /root/iPtato.sh 9
-exit $?
-`;
-      
-      // 上传临时脚本
-      const tempScriptPath = '/tmp/iPtato_unblock_ports.sh';
-      await sshService.executeCommand(serverId, `echo '${tempScriptContent}' > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
-      
-      // 执行临时脚本
-      const result = await sshService.executeCommand(serverId, `bash ${tempScriptPath}`);
-      
-      // 清理临时脚本
-      await sshService.executeCommand(serverId, `rm ${tempScriptPath}`);
+      // 直接使用命令行参数模式
+      const result = await sshService.executeCommand(serverId, `bash /root/iPtato.sh 9 "${ports}"`);
       
       return {
         success: result.code === 0,
@@ -379,22 +338,8 @@ exit $?
         return prereqCheck;
       }
       
-      // 创建一个临时脚本来处理交互式输入
-      const tempScriptContent = `#!/bin/bash
-echo "1" | bash /root/iPtato.sh 10 > /dev/null
-echo "${keyword}" | bash /root/iPtato.sh
-exit $?
-`;
-      
-      // 上传临时脚本
-      const tempScriptPath = '/tmp/iPtato_unblock_keyword.sh';
-      await sshService.executeCommand(serverId, `echo '${tempScriptContent}' > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
-      
-      // 执行临时脚本
-      const result = await sshService.executeCommand(serverId, `bash ${tempScriptPath}`);
-      
-      // 清理临时脚本
-      await sshService.executeCommand(serverId, `rm ${tempScriptPath}`);
+      // 直接使用命令行参数模式
+      const result = await sshService.executeCommand(serverId, `bash /root/iPtato.sh 10 "${keyword}"`);
       
       return {
         success: result.code === 0,
@@ -508,21 +453,8 @@ exit $?
         return prereqCheck;
       }
       
-      // 创建一个临时脚本来处理交互式输入
-      const tempScriptContent = `#!/bin/bash
-echo "${ports}" | bash /root/iPtato.sh 15
-exit $?
-`;
-      
-      // 上传临时脚本
-      const tempScriptPath = '/tmp/iPtato_allow_ports.sh';
-      await sshService.executeCommand(serverId, `echo '${tempScriptContent}' > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
-      
-      // 执行临时脚本
-      const result = await sshService.executeCommand(serverId, `bash ${tempScriptPath}`);
-      
-      // 清理临时脚本
-      await sshService.executeCommand(serverId, `rm ${tempScriptPath}`);
+      // 直接使用命令行参数模式
+      const result = await sshService.executeCommand(serverId, `bash /root/iPtato.sh 15 "${ports}"`);
       
       return {
         success: result.code === 0,
@@ -552,21 +484,8 @@ exit $?
         return prereqCheck;
       }
       
-      // 创建一个临时脚本来处理交互式输入
-      const tempScriptContent = `#!/bin/bash
-echo "${ports}" | bash /root/iPtato.sh 16
-exit $?
-`;
-      
-      // 上传临时脚本
-      const tempScriptPath = '/tmp/iPtato_disallow_ports.sh';
-      await sshService.executeCommand(serverId, `echo '${tempScriptContent}' > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
-      
-      // 执行临时脚本
-      const result = await sshService.executeCommand(serverId, `bash ${tempScriptPath}`);
-      
-      // 清理临时脚本
-      await sshService.executeCommand(serverId, `rm ${tempScriptPath}`);
+      // 直接使用命令行参数模式
+      const result = await sshService.executeCommand(serverId, `bash /root/iPtato.sh 16 "${ports}"`);
       
       return {
         success: result.code === 0,
@@ -596,21 +515,8 @@ exit $?
         return prereqCheck;
       }
       
-      // 创建一个临时脚本来处理交互式输入
-      const tempScriptContent = `#!/bin/bash
-echo "${ips}" | bash /root/iPtato.sh 17
-exit $?
-`;
-      
-      // 上传临时脚本
-      const tempScriptPath = '/tmp/iPtato_allow_ips.sh';
-      await sshService.executeCommand(serverId, `echo '${tempScriptContent}' > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
-      
-      // 执行临时脚本
-      const result = await sshService.executeCommand(serverId, `bash ${tempScriptPath}`);
-      
-      // 清理临时脚本
-      await sshService.executeCommand(serverId, `rm ${tempScriptPath}`);
+      // 直接使用命令行参数模式
+      const result = await sshService.executeCommand(serverId, `bash /root/iPtato.sh 17 "${ips}"`);
       
       return {
         success: result.code === 0,
@@ -640,21 +546,8 @@ exit $?
         return prereqCheck;
       }
       
-      // 创建一个临时脚本来处理交互式输入
-      const tempScriptContent = `#!/bin/bash
-echo "${ips}" | bash /root/iPtato.sh 18
-exit $?
-`;
-      
-      // 上传临时脚本
-      const tempScriptPath = '/tmp/iPtato_disallow_ips.sh';
-      await sshService.executeCommand(serverId, `echo '${tempScriptContent}' > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
-      
-      // 执行临时脚本
-      const result = await sshService.executeCommand(serverId, `bash ${tempScriptPath}`);
-      
-      // 清理临时脚本
-      await sshService.executeCommand(serverId, `rm ${tempScriptPath}`);
+      // 直接使用命令行参数模式
+      const result = await sshService.executeCommand(serverId, `bash /root/iPtato.sh 18 "${ips}"`);
       
       return {
         success: result.code === 0,
