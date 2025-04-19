@@ -8,7 +8,7 @@ export PATH
 #		Blog: 计划中
 #=================================================
 
-sh_ver="1.0.21"
+sh_ver="1.0.22"
 Green_font_prefix="\033[32m"
 Red_font_prefix="\033[31m"
 Green_background_prefix="\033[42;37m"
@@ -72,6 +72,31 @@ check_run() {
 		echo "文件存在 脚本不是初次运行"
 	fi
 }
+
+check_docker_env() {
+	# 检测是否在Docker容器中运行
+	if [ -f /.dockerenv ] || grep -q docker /proc/1/cgroup; then
+		echo
+		echo "${Red_font_prefix}[警告]${Font_color_suffix} 检测到当前在Docker容器环境中运行！"
+		echo "在Docker环境中，防火墙规则可能会与宿主机产生冲突。"
+		echo "建议在宿主机上运行此脚本，或确保Docker网络正确配置。"
+		echo
+		
+		# 检测当前网络模式
+		if [ -f /proc/net/route ]; then
+			if grep -q "172." /proc/net/route || grep -q "10." /proc/net/route; then
+				echo "${Green_font_prefix}[信息]${Font_color_suffix} 检测到容器使用桥接网络或自定义网络。"
+				echo "请确保宿主机上的防火墙已正确配置端口映射和访问规则。"
+				echo
+			elif grep -q "eth0" /proc/net/route && ! grep -q "172." /proc/net/route; then
+				echo "${Green_font_prefix}[信息]${Font_color_suffix} 检测到容器可能使用host网络模式。"
+				echo "在host网络模式下，容器共享宿主机的网络命名空间，防火墙规则将直接影响宿主机。"
+				echo
+			fi
+		fi
+	fi
+}
+
 shell_run_tips() {
 	if [ ${runflag} -eq 0 ]; then
 		echo
@@ -82,12 +107,51 @@ shell_run_tips() {
 }
 
 set_environment() {
+	disable_conflicting_firewalls
 	install_iptables
 	install_tool
 	long_save_rules_tool
 	rebuild_iptables_rule
 	able_ssh_port
 }
+
+disable_conflicting_firewalls() {
+	# 处理 firewalld (CentOS/RHEL)
+	if command -v firewall-cmd &> /dev/null; then
+		firestatus="$(firewall-cmd --state 2>/dev/null)"
+		if [ "${firestatus}" == "running" ]; then
+			echo "检测到firewalld正在运行，正在停止..."
+			systemctl stop firewalld.service
+			echo "禁止firewalld开机启动"
+			systemctl disable firewalld.service
+			echo "成功关闭firewalld"
+		fi
+	fi
+	
+	# 处理 ufw (Ubuntu/Debian)
+	if command -v ufw &> /dev/null; then
+		ufw_status=$(ufw status | grep -i "active")
+		if [ -n "${ufw_status}" ]; then
+			echo "检测到ufw正在运行，正在停止..."
+			ufw disable
+			echo "成功禁用ufw"
+		fi
+	fi
+	
+	# 处理 nftables
+	if command -v nft &> /dev/null; then
+		nft_status=$(systemctl is-active nftables 2>/dev/null)
+		if [ "${nft_status}" == "active" ]; then
+			echo "检测到nftables正在运行，正在停止..."
+			systemctl stop nftables
+			systemctl disable nftables
+			echo "成功禁用nftables"
+		fi
+	fi
+	
+	echo "防火墙冲突检查完成"
+}
+
 install_iptables() {
 	getiptables=$(iptables -V | awk 'NR==1{print  $1}')
 	if [ "$release" == "debian" ] || [ "$release" == "ubuntu" ]; then
@@ -121,22 +185,30 @@ rebuild_iptables_rule() {
 }
 long_save_rules_tool() {
 	if [ "$release" == "debian" ] || [ "$release" == "ubuntu" ]; then
-		echo "此类系统不需安装longruletool"
-	elif [[ "$release" == "centos" ]]; then
-		cipstatu=$(service iptables status | awk 'NR==1{print  $1}')
-		firestatus="$(firewall-cmd --state)"
-		if [ "${firestatus}" == "running" ]; then
-			echo "停止firewall中"
-			systemctl stop firewalld.service
-			echo "禁止firewall开机启动"
-			systemctl disable firewalld.service
-			echo "成功关闭firewall"
+		echo "在Debian/Ubuntu系统中配置iptables持久化..."
+		# 确保iptables-persistent已安装
+		if ! dpkg -l | grep -q "iptables-persistent"; then
+			echo "安装iptables-persistent..."
+			DEBIAN_FRONTEND=noninteractive apt-get install -y iptables-persistent
 		fi
-		if [ -z ${cipstatu} ]; then
+		# 确保iptables服务启用
+		if systemctl list-unit-files | grep -q "netfilter-persistent.service"; then
+			systemctl enable netfilter-persistent.service
+		fi
+	elif [[ "$release" == "centos" ]]; then
+		# 检查iptables服务状态
+		if ! systemctl list-unit-files | grep -q "iptables.service"; then
+			echo "安装iptables-services..."
 			yum install iptables-services -y
-			systemctl enable iptables
+		fi
+		# 确保启用iptables服务
+		systemctl enable iptables
+		# 如果存在ip6tables服务，也启用它
+		if systemctl list-unit-files | grep -q "ip6tables.service"; then
+			systemctl enable ip6tables
 		fi
 	fi
+	echo "iptables持久化配置完成"
 }
 able_ssh_port() {
 	s="A"
@@ -636,23 +708,67 @@ grep_in_ip() {
 
 # 部分调用函数
 save_iptables_v4_v6() {
+	echo "正在保存iptables规则..."
+	
+	# CentOS系统使用iptables-save服务保存
 	if [[ ${release} == "centos" ]]; then
-		if [[ ! -z "$v6iptables" ]]; then
-			service ip6tables save
-			chkconfig --level 2345 ip6tables on
-		fi
-		service iptables save
-		chkconfig --level 2345 iptables on
-	else
-		if [[ ! -z "$v6iptables" ]]; then
-			ip6tables-save >/etc/ip6tables.up.rules
-			echo -e "#!/bin/bash\n/sbin/iptables-restore < /etc/iptables.up.rules\n/sbin/ip6tables-restore < /etc/ip6tables.up.rules" >/etc/network/if-pre-up.d/iptables
+		if systemctl list-unit-files | grep -q "iptables.service"; then
+			service iptables save
+			if [[ ! -z "$v6iptables" ]] && systemctl list-unit-files | grep -q "ip6tables.service"; then
+				service ip6tables save
+			fi
 		else
-			echo -e "#!/bin/bash\n/sbin/iptables-restore < /etc/iptables.up.rules" >/etc/network/if-pre-up.d/iptables
+			# 如果没有iptables服务，手动保存规则
+			mkdir -p /etc/iptables
+			iptables-save > /etc/iptables/rules.v4
+			if [[ ! -z "$v6iptables" ]]; then
+				ip6tables-save > /etc/iptables/rules.v6
+			fi
 		fi
-		iptables-save >/etc/iptables.up.rules
+	# Debian/Ubuntu系统保存到rules文件
+	else
+		mkdir -p /etc/iptables
+		iptables-save > /etc/iptables/rules.v4
+		if [[ ! -z "$v6iptables" ]]; then
+			ip6tables-save > /etc/iptables/rules.v6
+		fi
+		
+		# 创建网络接口启动时自动加载规则的脚本
+		cat > /etc/network/if-pre-up.d/iptables <<-EOF
+		#!/bin/bash
+		/sbin/iptables-restore < /etc/iptables/rules.v4
+		if [ -f /etc/iptables/rules.v6 ]; then
+		  /sbin/ip6tables-restore < /etc/iptables/rules.v6
+		fi
+		exit 0
+		EOF
+		
 		chmod +x /etc/network/if-pre-up.d/iptables
+		
+		# 对于使用netplan的系统，确保通过systemd服务加载规则
+		if command -v netplan &> /dev/null; then
+			cat > /etc/systemd/system/iptables-restore.service <<-EOF
+			[Unit]
+			Description=Restore iptables firewall rules
+			Before=network-pre.target
+			Wants=network-pre.target
+			
+			[Service]
+			Type=oneshot
+			ExecStart=/sbin/iptables-restore /etc/iptables/rules.v4
+			ExecStart=/sbin/ip6tables-restore /etc/iptables/rules.v6
+			RemainAfterExit=yes
+			
+			[Install]
+			WantedBy=multi-user.target
+			EOF
+			
+			systemctl daemon-reload
+			systemctl enable iptables-restore.service
+		fi
 	fi
+	
+	echo "iptables规则保存完成"
 }
 
 display_out_port() {
@@ -861,6 +977,7 @@ non_interactive_inip_disallow() {
 check_system
 var_v4_v6_iptables
 check_run
+check_docker_env
 action=$1
 extra_param=$2
 
