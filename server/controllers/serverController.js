@@ -173,9 +173,13 @@ exports.deleteServer = async (req, res) => {
  */
 exports.connectServer = async (req, res) => {
   try {
+    const serverId = req.params.id;
+    console.log(`尝试连接服务器，ID: ${serverId}`);
+    
     // 检查服务器是否存在
-    const server = await Server.findById(req.params.id);
+    const server = await Server.findById(serverId);
     if (!server) {
+      console.error(`服务器不存在，ID: ${serverId}`);
       return res.status(404).json({
         success: false,
         message: '服务器未找到'
@@ -183,25 +187,35 @@ exports.connectServer = async (req, res) => {
     }
 
     // 如果已连接，返回成功
-    if (sshService.connections[req.params.id]) {
-      return res.status(200).json({
-        success: true,
-        message: '服务器已连接'
-      });
+    if (sshService.connections[serverId]) {
+      // 检查连接是否有效
+      if (sshService.checkConnection(serverId)) {
+        console.log(`服务器已连接且连接有效，ID: ${serverId}`);
+        return res.status(200).json({
+          success: true,
+          message: '服务器已连接'
+        });
+      } else {
+        console.log(`服务器连接无效，尝试重新连接，ID: ${serverId}`);
+        // 连接已失效，需要重新连接
+      }
     }
 
-    const result = await sshService.connect(req.params.id);
+    console.log(`开始建立SSH连接，服务器: ${server.name}, 主机: ${server.host}`);
+    const result = await sshService.connect(serverId);
+    console.log(`SSH连接建立成功，ID: ${serverId}`);
     
     res.status(200).json({
       success: true,
       message: result.message
     });
   } catch (error) {
-    console.error('连接服务器错误:', error);
+    console.error(`连接服务器错误:`, error);
     res.status(500).json({
       success: false,
       message: '连接服务器失败',
-      error: error.message
+      error: error.message,
+      stack: process.env.NODE_ENV === 'production' ? undefined : error.stack
     });
   }
 };
@@ -232,15 +246,59 @@ exports.disconnectServer = async (req, res) => {
 exports.executeCommand = async (req, res) => {
   try {
     const { command } = req.body;
+    const serverId = req.params.id;
+    
+    console.log(`接收到执行命令请求，服务器ID: ${serverId}, 命令: ${command}`);
     
     if (!command) {
+      console.error('命令为空');
       return res.status(400).json({
         success: false,
         message: '命令不能为空'
       });
     }
     
-    const result = await sshService.executeCommand(req.params.id, command);
+    // 检查服务器是否存在
+    const server = await Server.findById(serverId);
+    if (!server) {
+      console.error(`服务器不存在，ID: ${serverId}`);
+      return res.status(404).json({
+        success: false,
+        message: '服务器未找到'
+      });
+    }
+    
+    // 检查连接状态
+    if (!sshService.connections[serverId]) {
+      console.error(`无有效连接，服务器ID: ${serverId}`);
+      
+      // 尝试重新连接
+      try {
+        console.log(`尝试重新连接服务器，ID: ${serverId}`);
+        await sshService.connect(serverId);
+        console.log(`服务器重新连接成功，ID: ${serverId}`);
+      } catch (connError) {
+        console.error(`重新连接失败: ${connError.message}`);
+        return res.status(400).json({
+          success: false,
+          message: '服务器未连接，请先连接服务器',
+          error: connError.message
+        });
+      }
+    }
+    
+    // 确保连接有效
+    if (!sshService.checkConnection(serverId)) {
+      console.error(`SSH连接无效，服务器ID: ${serverId}`);
+      return res.status(400).json({
+        success: false,
+        message: 'SSH连接无效，请重新连接服务器'
+      });
+    }
+    
+    console.log(`开始执行命令: ${command}`);
+    const result = await sshService.executeCommand(serverId, command);
+    console.log(`命令执行完成，退出码: ${result.code}`);
     
     res.status(200).json({
       success: true,
@@ -251,10 +309,24 @@ exports.executeCommand = async (req, res) => {
       }
     });
   } catch (error) {
+    console.error(`执行命令出错: ${error.message}`, error);
+    
+    // 添加更详细的错误日志
+    const errorDetails = {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      code: error.code,
+      serverId: serverId
+    };
+    console.error('详细错误信息:', JSON.stringify(errorDetails, null, 2));
+    
     res.status(500).json({
       success: false,
       message: '执行命令失败',
-      error: error.message
+      error: error.message,
+      errorDetails: process.env.NODE_ENV === 'production' ? undefined : errorDetails,
+      stack: process.env.NODE_ENV === 'production' ? undefined : error.stack
     });
   }
 };
@@ -323,22 +395,8 @@ exports.deployIptato = async (req, res) => {
       });
     }
 
-    // 检查脚本是否已存在
-    try {
-      const scriptCheck = await sshService.executeCommand(req.params.id, 'test -f /root/iPtato.sh && echo "exists" || echo "not found"');
-      if (scriptCheck.stdout.includes('exists')) {
-        // 脚本已存在，重新部署
-        await sshService.executeCommand(req.params.id, 'rm -f /root/iPtato.sh');
-      }
-    } catch (checkError) {
-      // 检查失败，继续部署
-      console.warn('检查脚本存在状态失败，继续部署:', checkError.message);
-    }
-
+    // 部署脚本（通过wget从GitHub下载）
     const result = await sshService.deployIptato(req.params.id);
-    
-    // 部署完成后，设置执行权限
-    await sshService.executeCommand(req.params.id, 'chmod +x /root/iPtato.sh');
     
     res.status(200).json({
       success: true,
@@ -346,10 +404,22 @@ exports.deployIptato = async (req, res) => {
     });
   } catch (error) {
     console.error('部署脚本错误:', error);
+    
+    // 添加更详细的错误日志
+    const errorDetails = {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      code: error.code,
+      serverId: req.params.id
+    };
+    console.error('详细部署脚本错误信息:', JSON.stringify(errorDetails, null, 2));
+    
     res.status(500).json({
       success: false,
       message: '部署iPtato脚本失败',
-      error: error.message
+      error: error.message,
+      errorDetails: process.env.NODE_ENV === 'production' ? undefined : errorDetails
     });
   }
 }; 

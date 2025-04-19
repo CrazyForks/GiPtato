@@ -127,12 +127,12 @@ const actions = {
     }
   },
   
-  async executeCommand({ commit }, { id, command }) {
+  async executeCommand({ commit }, { serverId, command }) {
     commit('setLoading', true);
     commit('setError', null);
     
     try {
-      const response = await axios.post(`${API_URL}/${id}/execute`, { command });
+      const response = await axios.post(`${API_URL}/${serverId}/execute`, { command });
       return response.data;
     } catch (error) {
       commit('setError', error.response ? error.response.data.message : error.message);

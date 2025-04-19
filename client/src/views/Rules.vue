@@ -235,6 +235,7 @@
       <el-button type="warning" @click="checkScriptExistence" :loading="debugging">检查脚本存在</el-button>
       <el-button type="warning" @click="testServerConnection" :loading="debugging">测试服务器连接</el-button>
       <el-button type="danger" @click="resetConnectionState" :loading="debugging">重置连接状态</el-button>
+      <el-button type="primary" @click="generateManualCommands" :loading="debugging">生成手动执行命令</el-button>
       
       <div v-if="debugInfo" class="debug-info" style="margin-top: 15px;">
         <h4>调试信息：</h4>
@@ -1202,6 +1203,19 @@ export default {
           this.debugInfo += `获取服务器信息失败: ${serverResponse?.error || '未知错误'}\n`;
         }
         
+        // 尝试重新连接服务器
+        this.debugInfo += '\n尝试重新连接服务器...\n';
+        try {
+          const connectResponse = await this.connectServer(this.serverId);
+          if (connectResponse && connectResponse.success) {
+            this.debugInfo += '服务器重新连接成功\n';
+          } else {
+            this.debugInfo += `服务器重新连接失败: ${connectResponse?.error || '未知错误'}\n`;
+          }
+        } catch (connError) {
+          this.debugInfo += `重新连接出错: ${connError.message}\n`;
+        }
+        
         // 执行简单命令
         this.debugInfo += '\n2. 执行简单命令测试:\n';
         const commandResponse = await this.$store.dispatch('servers/executeCommand', {
@@ -1329,6 +1343,57 @@ export default {
         this.$message.error(`初始化失败: ${error.message}`);
       } finally {
         this.loading = false;
+      }
+    },
+    
+    // 生成手动执行命令
+    async generateManualCommands() {
+      if (!this.hasValidServerId) {
+        this.$message.error('未指定服务器ID，无法生成命令');
+        return;
+      }
+      
+      try {
+        this.debugging = true;
+        this.debugInfo = '以下是您可以直接在服务器上执行的命令：\n\n';
+        
+        // 1. 部署iPtato脚本的命令
+        this.debugInfo += '## 1. 部署iPtato脚本\n';
+        this.debugInfo += '```\n';
+        this.debugInfo += 'cd ~ && wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh\n';
+        this.debugInfo += '```\n\n';
+        
+        // 2. 测试iPtato脚本是否正常工作
+        this.debugInfo += '## 2. 测试iPtato脚本\n';
+        this.debugInfo += '```\n';
+        this.debugInfo += './iPtato.sh\n';
+        this.debugInfo += '```\n\n';
+        
+        // 3. 常用操作命令
+        this.debugInfo += '## 3. 常用操作命令\n';
+        this.debugInfo += '```\n';
+        this.debugInfo += '# 阻止BT/PT流量\n';
+        this.debugInfo += './iPtato.sh 1\n\n';
+        this.debugInfo += '# 解封BT/PT流量\n';
+        this.debugInfo += './iPtato.sh 11\n\n';
+        this.debugInfo += '# 查看当前封禁列表\n';
+        this.debugInfo += './iPtato.sh 101\n';
+        this.debugInfo += '```\n\n';
+        
+        // 添加说明
+        this.debugInfo += '## 使用方法\n';
+        this.debugInfo += '1. 通过SSH工具连接到您的服务器\n';
+        this.debugInfo += '2. 复制并粘贴上述命令到SSH终端执行\n';
+        this.debugInfo += '3. 执行完成后，返回此界面点击"跳过检查直接初始化"按钮\n\n';
+        
+        this.debugInfo += '如果您成功执行了这些命令，请点击页面上的"跳过检查直接初始化"按钮，这样可以绕过自动部署和检查过程，直接使用界面管理规则。\n';
+        
+        this.$message.success('已生成手动执行命令，请查看调试信息');
+      } catch (error) {
+        this.debugInfo += `\n生成命令过程出错: ${error.message}\n`;
+        this.$message.error(`生成命令出错: ${error.message}`);
+      } finally {
+        this.debugging = false;
       }
     }
   }
