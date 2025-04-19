@@ -65,6 +65,7 @@
             @click="handleDisconnect(scope.row)"
           >断开</el-button>
           <el-button
+            v-if="scope.row.status === 'online'"
             size="mini"
             type="primary"
             @click="handleManageRules(scope.row)"

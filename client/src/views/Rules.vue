@@ -4,8 +4,9 @@
       <h1>防火墙规则管理</h1>
       <div>
         <el-button type="primary" @click="$router.push('/servers')">返回服务器列表</el-button>
-        <el-button type="success" @click="deployIptatoScript" :loading="deploying" :disabled="!isServerOnline">部署脚本</el-button>
-        <el-button type="danger" @click="confirmClearRules" :disabled="!isServerOnline">清空所有规则</el-button>
+        <el-button v-if="isServerOnline" type="success" @click="deployIptatoScript" :loading="deploying">部署脚本</el-button>
+        <el-button v-if="isServerOnline" type="danger" @click="confirmClearRules">清空所有规则</el-button>
+        <el-button v-if="!isServerOnline && server" type="warning" @click="tryConnectServer" :loading="connecting">连接服务器</el-button>
       </div>
     </div>
 
@@ -16,20 +17,33 @@
 
     <el-tabs v-model="activeTab" type="card">
       <el-tab-pane label="出网控制" name="outbound">
-        <el-alert
-          v-if="!isServerOnline"
-          title="服务器当前处于离线状态"
-          type="warning"
-          description="服务器离线时无法管理防火墙规则，请先连接服务器"
-          show-icon
-          :closable="false"
-          style="margin-bottom: 15px;">
-        </el-alert>
-        <div v-loading="!isServerOnline">
+        <template v-if="!isServerOnline">
+          <el-alert
+            title="服务器当前处于离线状态"
+            type="warning"
+            description="服务器离线时无法管理防火墙规则，请先连接服务器"
+            show-icon
+            :closable="false"
+            style="margin-bottom: 15px;">
+          </el-alert>
+          
+          <div class="server-offline">
+            <i class="el-icon-connection"></i>
+            <h3>服务器未连接</h3>
+            <p>当前无法管理防火墙规则，请先连接服务器</p>
+          </div>
+          
+          <div class="offline-actions">
+            <el-button type="primary" @click="tryConnectServer" :loading="connecting" icon="el-icon-refresh">连接服务器</el-button>
+            <el-button @click="$router.push('/servers')" icon="el-icon-back">返回服务器列表</el-button>
+          </div>
+        </template>
+        
+        <div v-else>
           <el-card>
             <div slot="header">
               <span>当前封禁列表</span>
-              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshBlockList" :disabled="!isServerOnline">刷新</el-button>
+              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshBlockList">刷新</el-button>
             </div>
             
             <pre v-if="blockList" class="output">{{ blockList }}</pre>
@@ -103,20 +117,33 @@
       </el-tab-pane>
 
       <el-tab-pane label="入网控制" name="inbound">
-        <el-alert
-          v-if="!isServerOnline"
-          title="服务器当前处于离线状态"
-          type="warning"
-          description="服务器离线时无法管理防火墙规则，请先连接服务器"
-          show-icon
-          :closable="false"
-          style="margin-bottom: 15px;">
-        </el-alert>
-        <div v-loading="!isServerOnline">
+        <template v-if="!isServerOnline">
+          <el-alert
+            title="服务器当前处于离线状态"
+            type="warning"
+            description="服务器离线时无法管理防火墙规则，请先连接服务器"
+            show-icon
+            :closable="false"
+            style="margin-bottom: 15px;">
+          </el-alert>
+          
+          <div class="server-offline">
+            <i class="el-icon-connection"></i>
+            <h3>服务器未连接</h3>
+            <p>当前无法管理防火墙规则，请先连接服务器</p>
+          </div>
+          
+          <div class="offline-actions">
+            <el-button type="primary" @click="tryConnectServer" :loading="connecting" icon="el-icon-refresh">连接服务器</el-button>
+            <el-button @click="$router.push('/servers')" icon="el-icon-back">返回服务器列表</el-button>
+          </div>
+        </template>
+        
+        <div v-else>
           <el-card>
             <div slot="header">
               <span>SSH端口状态</span>
-              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshSSHPort" :disabled="!isServerOnline">刷新</el-button>
+              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshSSHPort">刷新</el-button>
             </div>
             
             <pre v-if="sshPortStatus" class="output">{{ sshPortStatus }}</pre>
@@ -126,7 +153,7 @@
           <el-card style="margin-top: 20px;">
             <div slot="header">
               <span>入网端口管理</span>
-              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundPorts" :disabled="!isServerOnline">刷新</el-button>
+              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundPorts">刷新</el-button>
             </div>
             
             <el-table v-loading="loadingPorts" :data="inboundPorts" style="width: 100%">
@@ -157,7 +184,7 @@
           <el-card style="margin-top: 20px;">
             <div slot="header">
               <span>入网IP管理</span>
-              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundIPs" :disabled="!isServerOnline">刷新</el-button>
+              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundIPs">刷新</el-button>
             </div>
             
             <el-table v-loading="loadingIPs" :data="inboundIPs" style="width: 100%">
@@ -1542,6 +1569,32 @@ export default {
         clearInterval(this.statusCheckTimer);
         this.statusCheckTimer = null;
       }
+    },
+    async tryConnectServer() {
+      if (!this.hasValidServerId) {
+        this.$message.error('未指定服务器ID，无法连接服务器');
+        return;
+      }
+      
+      try {
+        this.connecting = true;
+        this.commandOutput = '正在尝试连接服务器...\n';
+        
+        const connectResponse = await this.connectServer(this.serverId);
+        
+        if (connectResponse && connectResponse.success) {
+          this.$message.success('服务器连接成功');
+          this.commandOutput += '\n服务器连接成功';
+        } else {
+          this.$message.error(connectResponse?.error || '连接服务器失败');
+          this.commandOutput += `\n连接服务器失败: ${connectResponse?.error || '未知错误'}`;
+        }
+      } catch (error) {
+        this.$message.error(`连接服务器错误: ${error.message}`);
+        this.commandOutput += `\n连接服务器错误: ${error.message}`;
+      } finally {
+        this.connecting = false;
+      }
     }
   }
 };
@@ -1623,5 +1676,32 @@ export default {
   background-color: #f5f5f5;
   border-radius: 4px;
   margin-top: 15px;
+}
+
+.offline-actions {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+  margin-bottom: 30px;
+  padding: 20px;
+  background-color: #f5f7fa;
+  border-radius: 4px;
+  border: 1px dashed #dcdfe6;
+}
+
+.server-offline {
+  text-align: center;
+  margin: 40px 0;
+  color: #909399;
+}
+
+.server-offline .el-icon-connection {
+  font-size: 48px;
+  margin-bottom: 10px;
+  color: #E6A23C;
+}
+
+.server-offline h3 {
+  margin-bottom: 20px;
 }
 </style> 
