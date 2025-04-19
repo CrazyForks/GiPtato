@@ -302,7 +302,7 @@ exports.checkServerStatus = async (req, res) => {
 };
 
 /**
- * 部署iptato脚本到服务器
+ * 部署iPtato脚本到服务器
  */
 exports.deployIptato = async (req, res) => {
   try {
@@ -325,10 +325,10 @@ exports.deployIptato = async (req, res) => {
 
     // 检查脚本是否已存在
     try {
-      const scriptCheck = await sshService.executeCommand(req.params.id, 'test -f /root/iptato.sh && echo "exists" || echo "not found"');
+      const scriptCheck = await sshService.executeCommand(req.params.id, 'test -f /root/iPtato.sh && echo "exists" || echo "not found"');
       if (scriptCheck.stdout.includes('exists')) {
         // 脚本已存在，重新部署
-        await sshService.executeCommand(req.params.id, 'rm -f /root/iptato.sh');
+        await sshService.executeCommand(req.params.id, 'rm -f /root/iPtato.sh');
       }
     } catch (checkError) {
       // 检查失败，继续部署
@@ -338,7 +338,7 @@ exports.deployIptato = async (req, res) => {
     const result = await sshService.deployIptato(req.params.id);
     
     // 部署完成后，设置执行权限
-    await sshService.executeCommand(req.params.id, 'chmod +x /root/iptato.sh');
+    await sshService.executeCommand(req.params.id, 'chmod +x /root/iPtato.sh');
     
     res.status(200).json({
       success: true,
@@ -348,7 +348,7 @@ exports.deployIptato = async (req, res) => {
     console.error('部署脚本错误:', error);
     res.status(500).json({
       success: false,
-      message: '部署iptato脚本失败',
+      message: '部署iPtato脚本失败',
       error: error.message
     });
   }

@@ -278,14 +278,14 @@ class SSHService {
   }
 
   /**
-   * 上传并执行iptato.sh脚本
+   * 上传并执行iPtato.sh脚本
    * @param {string} serverId - 服务器ID
    * @returns {Promise<object>} - 执行结果
    */
   async deployIptato(serverId) {
     try {
       // 本地脚本路径
-      const localScriptPath = path.join(__dirname, '../scripts/iptato.sh');
+      const localScriptPath = path.join(__dirname, '../scripts/iPtato.sh');
       console.log(`部署脚本的本地路径: ${localScriptPath}`);
       
       // 检查本地脚本是否存在
@@ -293,12 +293,12 @@ class SSHService {
         console.error(`错误: 本地脚本不存在: ${localScriptPath}`);
         return {
           success: false,
-          message: '本地iptato脚本文件不存在，请检查安装'
+          message: '本地iPtato脚本文件不存在，请检查安装'
         };
       }
       
       // 远程脚本路径
-      const remoteScriptPath = '/root/iptato.sh';
+      const remoteScriptPath = '/root/iPtato.sh';
       
       // 上传脚本
       await this.uploadFile(serverId, localScriptPath, remoteScriptPath);
@@ -309,7 +309,7 @@ class SSHService {
       
       return {
         success: true,
-        message: 'iptato脚本已部署到服务器'
+        message: 'iPtato脚本已部署到服务器'
       };
     } catch (error) {
       console.error(`部署脚本时发生错误:`, error);
@@ -318,7 +318,7 @@ class SSHService {
   }
 
   /**
-   * 在服务器上执行iptato脚本命令
+   * 在服务器上执行iPtato脚本命令
    * @param {string} serverId - 服务器ID
    * @param {string|number} action - 要执行的操作代码
    * @returns {Promise<object>} - 执行结果
@@ -337,25 +337,25 @@ class SSHService {
       }
 
       // 检查脚本是否存在
-      const scriptCheck = await this.executeCommand(serverId, 'test -f /root/iptato.sh && echo "exists" || echo "not found"');
+      const scriptCheck = await this.executeCommand(serverId, 'test -f /root/iPtato.sh && echo "exists" || echo "not found"');
       if (scriptCheck.stdout.includes('not found')) {
         return {
           success: false,
           output: '',
-          error: 'iptato脚本未找到，请先部署脚本',
+          error: 'iPtato脚本未找到，请先部署脚本',
           code: -1
         };
       }
 
       // 检查脚本是否有执行权限
-      const permCheck = await this.executeCommand(serverId, 'test -x /root/iptato.sh && echo "executable" || echo "not executable"');
+      const permCheck = await this.executeCommand(serverId, 'test -x /root/iPtato.sh && echo "executable" || echo "not executable"');
       if (permCheck.stdout.includes('not executable')) {
         // 自动修复执行权限
-        await this.executeCommand(serverId, 'chmod +x /root/iptato.sh');
+        await this.executeCommand(serverId, 'chmod +x /root/iPtato.sh');
       }
 
       // 执行脚本命令
-      const command = `bash /root/iptato.sh ${action}`;
+      const command = `bash /root/iPtato.sh ${action}`;
       const result = await this.executeCommand(serverId, command);
       
       // 检查执行结果

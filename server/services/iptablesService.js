@@ -18,11 +18,11 @@ class IptablesService {
       }
       
       // 检查脚本是否存在
-      const scriptCheck = await sshService.executeCommand(serverId, 'test -f /root/iptato.sh && echo "exists" || echo "not found"');
+      const scriptCheck = await sshService.executeCommand(serverId, 'test -f /root/iPtato.sh && echo "exists" || echo "not found"');
       if (scriptCheck.stdout.includes('not found')) {
         return {
           success: false,
-          error: 'iptato脚本未部署，请先部署脚本'
+          error: 'iPtato脚本未部署，请先部署脚本'
         };
       }
       
@@ -164,12 +164,12 @@ class IptablesService {
       // 这个操作需要交互式输入，我们需要用特殊方式处理
       // 创建一个临时脚本来处理交互式输入
       const tempScriptContent = `#!/bin/bash
-echo "${ports}" | bash /root/iptato.sh 4
+echo "${ports}" | bash /root/iPtato.sh 4
 exit $?
 `;
       
       // 上传临时脚本
-      const tempScriptPath = '/tmp/iptato_block_ports.sh';
+      const tempScriptPath = '/tmp/iPtato_block_ports.sh';
       await sshService.executeCommand(serverId, `echo '${tempScriptContent}' > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
       
       // 执行临时脚本
@@ -208,13 +208,13 @@ exit $?
       
       // 创建一个临时脚本来处理交互式输入
       const tempScriptContent = `#!/bin/bash
-echo "1" | bash /root/iptato.sh 5 > /dev/null
-echo "${keyword}" | bash /root/iptato.sh
+echo "1" | bash /root/iPtato.sh 5 > /dev/null
+echo "${keyword}" | bash /root/iPtato.sh
 exit $?
 `;
       
       // 上传临时脚本
-      const tempScriptPath = '/tmp/iptato_block_keyword.sh';
+      const tempScriptPath = '/tmp/iPtato_block_keyword.sh';
       await sshService.executeCommand(serverId, `echo '${tempScriptContent}' > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
       
       // 执行临时脚本
@@ -337,12 +337,12 @@ exit $?
       
       // 创建一个临时脚本来处理交互式输入
       const tempScriptContent = `#!/bin/bash
-echo "${ports}" | bash /root/iptato.sh 9
+echo "${ports}" | bash /root/iPtato.sh 9
 exit $?
 `;
       
       // 上传临时脚本
-      const tempScriptPath = '/tmp/iptato_unblock_ports.sh';
+      const tempScriptPath = '/tmp/iPtato_unblock_ports.sh';
       await sshService.executeCommand(serverId, `echo '${tempScriptContent}' > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
       
       // 执行临时脚本
@@ -381,13 +381,13 @@ exit $?
       
       // 创建一个临时脚本来处理交互式输入
       const tempScriptContent = `#!/bin/bash
-echo "1" | bash /root/iptato.sh 10 > /dev/null
-echo "${keyword}" | bash /root/iptato.sh
+echo "1" | bash /root/iPtato.sh 10 > /dev/null
+echo "${keyword}" | bash /root/iPtato.sh
 exit $?
 `;
       
       // 上传临时脚本
-      const tempScriptPath = '/tmp/iptato_unblock_keyword.sh';
+      const tempScriptPath = '/tmp/iPtato_unblock_keyword.sh';
       await sshService.executeCommand(serverId, `echo '${tempScriptContent}' > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
       
       // 执行临时脚本
@@ -510,12 +510,12 @@ exit $?
       
       // 创建一个临时脚本来处理交互式输入
       const tempScriptContent = `#!/bin/bash
-echo "${ports}" | bash /root/iptato.sh 15
+echo "${ports}" | bash /root/iPtato.sh 15
 exit $?
 `;
       
       // 上传临时脚本
-      const tempScriptPath = '/tmp/iptato_allow_ports.sh';
+      const tempScriptPath = '/tmp/iPtato_allow_ports.sh';
       await sshService.executeCommand(serverId, `echo '${tempScriptContent}' > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
       
       // 执行临时脚本
@@ -554,12 +554,12 @@ exit $?
       
       // 创建一个临时脚本来处理交互式输入
       const tempScriptContent = `#!/bin/bash
-echo "${ports}" | bash /root/iptato.sh 16
+echo "${ports}" | bash /root/iPtato.sh 16
 exit $?
 `;
       
       // 上传临时脚本
-      const tempScriptPath = '/tmp/iptato_disallow_ports.sh';
+      const tempScriptPath = '/tmp/iPtato_disallow_ports.sh';
       await sshService.executeCommand(serverId, `echo '${tempScriptContent}' > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
       
       // 执行临时脚本
@@ -598,12 +598,12 @@ exit $?
       
       // 创建一个临时脚本来处理交互式输入
       const tempScriptContent = `#!/bin/bash
-echo "${ips}" | bash /root/iptato.sh 17
+echo "${ips}" | bash /root/iPtato.sh 17
 exit $?
 `;
       
       // 上传临时脚本
-      const tempScriptPath = '/tmp/iptato_allow_ips.sh';
+      const tempScriptPath = '/tmp/iPtato_allow_ips.sh';
       await sshService.executeCommand(serverId, `echo '${tempScriptContent}' > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
       
       // 执行临时脚本
@@ -642,12 +642,12 @@ exit $?
       
       // 创建一个临时脚本来处理交互式输入
       const tempScriptContent = `#!/bin/bash
-echo "${ips}" | bash /root/iptato.sh 18
+echo "${ips}" | bash /root/iPtato.sh 18
 exit $?
 `;
       
       // 上传临时脚本
-      const tempScriptPath = '/tmp/iptato_disallow_ips.sh';
+      const tempScriptPath = '/tmp/iPtato_disallow_ips.sh';
       await sshService.executeCommand(serverId, `echo '${tempScriptContent}' > ${tempScriptPath} && chmod +x ${tempScriptPath}`);
       
       // 执行临时脚本

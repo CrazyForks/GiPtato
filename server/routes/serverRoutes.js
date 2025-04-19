@@ -15,7 +15,7 @@ router.post('/:id/disconnect', serverController.disconnectServer);
 router.post('/:id/execute', serverController.executeCommand);
 router.get('/:id/status', serverController.checkServerStatus);
 
-// iptato部署路由
+// iPtato部署路由
 router.post('/:id/deploy', serverController.deployIptato);
 
 module.exports = router; 
