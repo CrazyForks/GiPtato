@@ -46,11 +46,13 @@ const app = express();
 
 // CORS配置
 const corsOptions = {
-  origin: process.env.CORS_ORIGIN || 'http://localhost:8080',
+  origin: process.env.CORS_ORIGIN === '*' 
+    ? true // 允许所有来源
+    : (process.env.CORS_ORIGIN || 'http://localhost:8080').split(','),
   credentials: true,
   optionsSuccessStatus: 200
 };
-console.log(`CORS配置: 允许来源 ${corsOptions.origin}`);
+console.log(`CORS配置: ${process.env.CORS_ORIGIN === '*' ? '允许所有来源' : '允许来源 ' + corsOptions.origin}`);
 
 // 中间件
 app.use(cors(corsOptions));
@@ -138,6 +140,10 @@ app.use((err, req, res, next) => {
 
 // 启动服务器
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`服务器运行在 http://localhost:${PORT}`);
+const HOST = process.env.HOST || '0.0.0.0';
+app.listen(PORT, HOST, () => {
+  console.log(`服务器运行在 http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`);
+  if (HOST === '0.0.0.0') {
+    console.log(`在Docker或远程环境中，可通过服务器IP访问：http://服务器IP:${PORT}`);
+  }
 }); 
