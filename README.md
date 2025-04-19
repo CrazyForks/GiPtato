@@ -143,6 +143,7 @@ MIT License
 ## 项目参考
 
 本项目基于[iPtato脚本](https://github.com/Aipblock/iPtato)开发
+> 原脚本作者已经三年没有更新，基于脚本使用Ai工具完善了点功能，然后开发这个面板
 
 # iPtato
 通过简单的脚本，实现控制系统的出入网络流量
