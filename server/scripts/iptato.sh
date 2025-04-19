@@ -4,7 +4,7 @@ export PATH
 #=================================================
 #       System Required: CentOS/Debian/Ubuntu
 #       Description: iptables 出封禁 入放行
-#       Version: 1.0.20
+#       Version: 1.0.22
 #		Blog: 计划中
 #=================================================
 
