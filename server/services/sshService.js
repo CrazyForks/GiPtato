@@ -286,12 +286,23 @@ class SSHService {
     try {
       // 本地脚本路径
       const localScriptPath = path.join(__dirname, '../scripts/iptato.sh');
+      console.log(`部署脚本的本地路径: ${localScriptPath}`);
+      
+      // 检查本地脚本是否存在
+      if (!fs.existsSync(localScriptPath)) {
+        console.error(`错误: 本地脚本不存在: ${localScriptPath}`);
+        return {
+          success: false,
+          message: '本地iptato脚本文件不存在，请检查安装'
+        };
+      }
       
       // 远程脚本路径
       const remoteScriptPath = '/root/iptato.sh';
       
       // 上传脚本
       await this.uploadFile(serverId, localScriptPath, remoteScriptPath);
+      console.log(`脚本已上传到服务器 ${serverId}: ${remoteScriptPath}`);
       
       // 设置执行权限
       await this.executeCommand(serverId, `chmod +x ${remoteScriptPath}`);
@@ -301,6 +312,7 @@ class SSHService {
         message: 'iptato脚本已部署到服务器'
       };
     } catch (error) {
+      console.error(`部署脚本时发生错误:`, error);
       throw error;
     }
   }

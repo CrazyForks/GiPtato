@@ -1,18 +1,35 @@
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
+require('dotenv').config();
 
-const dataFilePath = path.join(__dirname, '../data/servers.json');
+// 使用环境变量中的DATA_DIR或默认路径，处理相对路径
+let dataDir;
+if (process.env.DATA_DIR) {
+  // 处理相对路径，将它转换为相对于项目根目录的绝对路径
+  if (process.env.DATA_DIR.startsWith('./')) {
+    dataDir = path.join(__dirname, '../..', process.env.DATA_DIR.substring(2));
+  } else {
+    dataDir = path.resolve(process.env.DATA_DIR);
+  }
+} else {
+  dataDir = path.join(__dirname, '../data');
+}
+
+const dataFilePath = path.join(dataDir, 'servers.json');
+
+console.log(`Server模型使用的数据文件路径: ${dataFilePath}`);
 
 // 确保data目录存在
-const dataDir = path.join(__dirname, '../data');
 if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
+  console.log(`从Server模型创建的数据目录: ${dataDir}`);
 }
 
 // 确保JSON文件存在
 if (!fs.existsSync(dataFilePath)) {
   fs.writeFileSync(dataFilePath, JSON.stringify({ servers: [] }, null, 2));
+  console.log(`从Server模型创建的服务器数据文件: ${dataFilePath}`);
 }
 
 class Server {
