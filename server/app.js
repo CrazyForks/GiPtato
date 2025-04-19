@@ -2,8 +2,31 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-// 加载根目录的环境变量文件
-require('dotenv').config({ path: path.join(__dirname, '../.env') });
+
+// 尝试加载环境变量
+const dotenvPath = path.join(__dirname, '../.env');
+if (fs.existsSync(dotenvPath)) {
+  // 如果.env文件存在，使用dotenv加载
+  require('dotenv').config({ path: dotenvPath });
+  console.log('已从.env文件加载环境变量');
+} else {
+  // 如果.env文件不存在，尝试从config.json加载
+  const configPath = path.join(__dirname, 'config.json');
+  if (fs.existsSync(configPath)) {
+    try {
+      const config = require(configPath);
+      console.log('从config.json加载环境变量');
+      // 将配置项添加到process.env
+      Object.keys(config).forEach(key => {
+        process.env[key] = config[key];
+      });
+    } catch (error) {
+      console.error('加载config.json时出错:', error);
+    }
+  } else {
+    console.warn('警告: 找不到.env文件或config.json文件，将使用默认环境变量');
+  }
+}
 
 // 打印环境变量
 console.log('===== 服务器配置 =====');
