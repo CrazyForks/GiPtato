@@ -13,6 +13,78 @@ const getters = {
 };
 
 const actions = {
+  // 获取服务器规则缓存
+  async getServerCache({ commit }, serverId) {
+    commit('setLoading', true);
+    commit('setError', null);
+    
+    try {
+      const response = await axios.get(`${API_URL}/${serverId}/cache`);
+      return response.data;
+    } catch (error) {
+      // 如果是404错误，说明缓存不存在，这不是错误
+      if (error.response && error.response.status === 404) {
+        return { success: false, error: '缓存不存在' };
+      }
+      commit('setError', error.response ? error.response.data.message : error.message);
+      throw error;
+    } finally {
+      commit('setLoading', false);
+    }
+  },
+  
+  // 获取缓存最后更新时间
+  async getCacheLastUpdate({ commit }, serverId) {
+    commit('setLoading', true);
+    commit('setError', null);
+    
+    try {
+      const response = await axios.get(`${API_URL}/${serverId}/cache/last-update`);
+      return response.data;
+    } catch (error) {
+      // 如果是404错误，说明缓存不存在，这不是错误
+      if (error.response && error.response.status === 404) {
+        return { success: false, error: '缓存不存在' };
+      }
+      commit('setError', error.response ? error.response.data.message : error.message);
+      throw error;
+    } finally {
+      commit('setLoading', false);
+    }
+  },
+  
+  // 清除服务器规则缓存
+  async clearServerCache({ commit }, serverId) {
+    commit('setLoading', true);
+    commit('setError', null);
+    
+    try {
+      const response = await axios.delete(`${API_URL}/${serverId}/cache`);
+      return response.data;
+    } catch (error) {
+      commit('setError', error.response ? error.response.data.message : error.message);
+      throw error;
+    } finally {
+      commit('setLoading', false);
+    }
+  },
+  
+  // 更新服务器缓存项
+  async updateCacheItem({ commit }, { serverId, key, value }) {
+    commit('setLoading', true);
+    commit('setError', null);
+    
+    try {
+      const response = await axios.put(`${API_URL}/${serverId}/cache/${key}`, { value });
+      return response.data;
+    } catch (error) {
+      commit('setError', error.response ? error.response.data.message : error.message);
+      throw error;
+    } finally {
+      commit('setLoading', false);
+    }
+  },
+  
   // 获取封禁列表
   async getBlockList({ commit }, serverId) {
     commit('setLoading', true);

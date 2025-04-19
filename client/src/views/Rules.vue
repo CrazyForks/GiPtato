@@ -332,7 +332,28 @@ export default {
       ],
       debugging: false,
       debugInfo: '',
-      statusCheckTimer: null
+      statusCheckTimer: null,
+      dataCache: {
+        blockList: null,
+        sshPortStatus: null,
+        inboundPorts: null,
+        inboundIPs: null
+      },
+      cacheTTL: 30000,
+      cacheTimestamps: {
+        blockList: 0,
+        sshPortStatus: 0,
+        inboundPorts: 0,
+        inboundIPs: 0
+      },
+      dataLoaded: {
+        blockList: false,
+        sshPortStatus: false,
+        inboundPorts: false,
+        inboundIPs: false
+      },
+      serverCacheAvailable: false,
+      serverCacheLastUpdate: null
     };
   },
   computed: {
@@ -345,9 +366,7 @@ export default {
     }
   },
   beforeRouteEnter(to, from, next) {
-    // 检查路由参数中是否包含有效的服务器ID
     if (!to.params.serverId) {
-      // 如果没有有效的服务器ID，重定向到服务器列表页面
       next(vm => {
         vm.$message.error('未指定服务器ID，请先选择服务器');
         vm.$router.push('/servers');
@@ -356,14 +375,16 @@ export default {
       next();
     }
   },
-  async created() {
-    // 设置默认标签页为出网控制
+  created() {
     this.activeTab = 'outbound';
     
     if (this.hasValidServerId) {
-      await this.checkInitialization();
+      this.$nextTick(async () => {
+        // 先重置连接状态，然后再进行初始化
+        await this.autoResetConnectionState();
+        await this.checkInitialization();
+      });
       
-      // 设置定时检查服务器状态
       this.startServerStatusCheck();
     } else {
       this.commandOutput = '服务器ID无效，请返回服务器列表重新选择服务器';
@@ -371,7 +392,6 @@ export default {
     }
   },
   beforeDestroy() {
-    // 清除定时器
     this.stopServerStatusCheck();
   },
   methods: {
@@ -400,7 +420,11 @@ export default {
       'allowInboundIPsAction',
       'disallowInboundIPsAction',
       'getSSHPort',
-      'clearAllRulesAction'
+      'clearAllRulesAction',
+      'getServerCache',
+      'getCacheLastUpdate',
+      'clearServerCache',
+      'updateCacheItem'
     ]),
     async checkInitialization() {
       try {
@@ -410,13 +434,14 @@ export default {
           return false;
         }
 
-        // 重置初始化步骤
         this.resetInitSteps();
         this.isInitialized = false;
         this.initStepActive = 0;
         
-        // 步骤1: 检查状态
+        this.commandOutput = '正在检查服务器状态...';
         this.loading = true;
+        
+        // 步骤1: 检查状态
         const serverResponse = await this.getServer(this.serverId);
         if (!serverResponse || !serverResponse.success) {
           throw new Error(serverResponse?.error || '获取服务器信息失败');
@@ -425,66 +450,117 @@ export default {
         this.initializationSteps[0].done = true;
         this.initStepActive = 1;
         
-        // 步骤2: 连接服务器
-        if (!this.server.status || this.server.status !== 'connected') {
-          this.commandOutput = '正在连接服务器...';
+        // 尝试加载服务器缓存
+        const cacheLoaded = await this.loadServerCache();
+        if (cacheLoaded) {
+          this.commandOutput += '\n已成功加载服务器缓存数据';
+        }
+        
+        // 步骤2: 仅在服务器未连接且自动连接失败时尝试再次连接
+        if (!this.server.status || this.server.status !== 'online') {
+          this.commandOutput += '\n服务器未连接，正在尝试连接...';
           this.connecting = true;
           const connectResponse = await this.connectServer(this.serverId);
           this.connecting = false;
           
           if (!connectResponse || !connectResponse.success) {
-            throw new Error(connectResponse?.error || '连接服务器失败');
+            // 如果连接失败但有缓存数据，仍可继续
+            if (cacheLoaded) {
+              this.$message.warning('服务器连接失败，将使用缓存数据');
+              this.commandOutput += '\n服务器连接失败，将使用缓存数据';
+              this.initializationSteps[1].done = true;
+              this.initStepActive = 2;
+              this.initializationSteps[2].done = true;
+              this.initStepActive = 3;
+              this.initializationSteps[3].done = true;
+              this.isInitialized = true;
+              this.loading = false;
+              return true;
+            } else {
+              throw new Error(connectResponse?.error || '连接服务器失败');
+            }
           }
           this.commandOutput += '\n服务器连接成功';
+        } else {
+          // 如果服务器已连接，直接标记此步骤为完成
+          this.commandOutput += '\n服务器已连接，跳过连接步骤';
+          this.initializationSteps[1].done = true;
+          this.initStepActive = 2;
         }
-        this.initializationSteps[1].done = true;
-        this.initStepActive = 2;
         
-        // 步骤3: 部署脚本
-        this.commandOutput += '\n检查iptato脚本部署情况...';
-        this.deploying = true;
-        try {
-          const deployResponse = await this.deployIptato(this.serverId);
-          this.deploying = false;
-          
-          if (!deployResponse || !deployResponse.success) {
-            const errorMsg = deployResponse?.error || '脚本部署失败';
-            this.commandOutput += `\n脚本部署失败: ${errorMsg}`;
+        // 步骤3: 检查脚本部署状态 - 仅在缓存不存在或强制检查时执行
+        if (!cacheLoaded || this.deploying) {
+          this.commandOutput += '\n检查脚本部署情况...';
+          this.deploying = true;
+          try {
+            const deployResponse = await this.deployIptato(this.serverId);
+            this.deploying = false;
             
-            // 检查是否是服务器内部错误
-            if (errorMsg.includes('500') || errorMsg.includes('内部错误')) {
-              this.commandOutput += '\n服务器内部错误，可能原因：';
-              this.commandOutput += '\n1. 服务器磁盘空间不足';
-              this.commandOutput += '\n2. 服务器防火墙限制了文件上传';
-              this.commandOutput += '\n3. 服务器缺少必要的依赖包';
-              this.commandOutput += '\n\n建议操作：';
-              this.commandOutput += '\n- 检查服务器连接状态';
-              this.commandOutput += '\n- 查看服务器日志获取详细错误信息';
-              this.commandOutput += '\n- 尝试手动连接服务器并安装依赖';
+            if (!deployResponse || !deployResponse.success) {
+              const errorMsg = deployResponse?.error || '脚本部署失败';
+              this.commandOutput += `\n脚本部署失败: ${errorMsg}`;
+              
+              if (errorMsg.includes('500') || errorMsg.includes('内部错误')) {
+                this.commandOutput += '\n服务器内部错误，可能原因：';
+                this.commandOutput += '\n1. 服务器磁盘空间不足';
+                this.commandOutput += '\n2. 服务器防火墙限制了文件上传';
+                this.commandOutput += '\n3. 服务器缺少必要的依赖包';
+                this.commandOutput += '\n\n建议操作：';
+                this.commandOutput += '\n- 检查服务器连接状态';
+                this.commandOutput += '\n- 查看服务器日志获取详细错误信息';
+                this.commandOutput += '\n- 尝试手动连接服务器并安装依赖';
+              }
+              
+              this.$message.error(`脚本部署失败: ${errorMsg}`);
+              throw new Error(errorMsg);
             }
             
-            this.$message.error(`脚本部署失败: ${errorMsg}`);
-            throw new Error(errorMsg);
+            this.commandOutput += '\n脚本部署成功';
+          } catch (deployError) {
+            this.deploying = false;
+            this.commandOutput += `\n脚本部署过程中出错: ${deployError.message}`;
+            
+            // 如果有缓存数据，即使部署失败也可以继续
+            if (cacheLoaded) {
+              this.$message.warning('脚本部署失败，将使用缓存数据');
+              this.commandOutput += '\n将使用缓存数据继续';
+            } else {
+              throw deployError;
+            }
           }
-          
-          this.commandOutput += '\n脚本部署成功';
-          this.initializationSteps[2].done = true;
-          this.initStepActive = 3;
-        } catch (deployError) {
-          this.deploying = false;
-          this.commandOutput += `\n脚本部署过程中出错: ${deployError.message}`;
-          throw deployError;
+        } else {
+          // 有缓存数据且服务器在线，跳过部署步骤
+          this.commandOutput += '\n使用已有缓存数据，跳过脚本部署检查';
         }
         
-        // 步骤4: 加载规则
-        await this.refreshBlockList();
-        await this.refreshSSHPort();
-        await this.refreshInboundPorts();
-        await this.refreshInboundIPs();
+        this.initializationSteps[2].done = true;
+        this.initStepActive = 3;
         
+        // 步骤4: 加载规则信息
         this.initializationSteps[3].done = true;
         this.isInitialized = true;
         this.loading = false;
+        
+        // 如果服务器在线且某些数据未从缓存加载，则请求这些数据
+        if (this.isServerOnline) {
+          // 只请求未缓存的数据
+          if (!this.dataLoaded.blockList) {
+            setTimeout(() => this.refreshBlockList(), 0);
+          }
+          
+          if (!this.dataLoaded.sshPortStatus) {
+            setTimeout(() => this.refreshSSHPort(), 800);
+          }
+          
+          if (!this.dataLoaded.inboundPorts) {
+            setTimeout(() => this.refreshInboundPorts(), 1600);
+          }
+          
+          if (!this.dataLoaded.inboundIPs) {
+            setTimeout(() => this.refreshInboundIPs(), 2400);
+          }
+        }
+        
         return true;
       } catch (error) {
         this.loading = false;
@@ -504,12 +580,26 @@ export default {
         return;
       }
       
+      const now = Date.now();
+      if (this.dataCache.blockList && 
+          (now - this.cacheTimestamps.blockList) < this.cacheTTL) {
+        this.blockList = this.dataCache.blockList;
+        console.log('使用缓存的阻止列表数据');
+        return;
+      }
+      
       try {
         this.loading = true;
         const response = await this.getBlockList(this.serverId);
         
         if (response && response.success) {
           this.blockList = response.data || '无阻止列表数据';
+          this.dataCache.blockList = this.blockList;
+          this.cacheTimestamps.blockList = now;
+          this.dataLoaded.blockList = true;
+          
+          // 更新服务器缓存
+          await this.updateServerCacheItem('blockList', this.blockList);
         } else {
           this.$message.warning(response?.error || '获取阻止列表失败');
           this.blockList = '获取阻止列表失败';
@@ -527,18 +617,30 @@ export default {
         return;
       }
       
+      const now = Date.now();
+      if (this.dataCache.sshPortStatus && 
+          (now - this.cacheTimestamps.sshPortStatus) < this.cacheTTL) {
+        this.sshPortStatus = this.dataCache.sshPortStatus;
+        console.log('使用缓存的SSH端口数据');
+        return;
+      }
+      
       try {
         this.loading = true;
         const response = await this.getSSHPort(this.serverId);
         
         if (response && response.success) {
           this.sshPortStatus = response.data || '无SSH端口数据';
+          this.dataCache.sshPortStatus = this.sshPortStatus;
+          this.cacheTimestamps.sshPortStatus = now;
+          this.dataLoaded.sshPortStatus = true;
           
-          // 尝试从响应中提取SSH端口
+          // 更新服务器缓存
+          await this.updateServerCacheItem('sshPortStatus', this.sshPortStatus);
+          
           try {
             const sshData = response.data;
             if (sshData && typeof sshData === 'string') {
-              // 尝试从字符串中匹配端口号
               const portMatch = sshData.match(/SSH端口\s*[:：]\s*(\d+)/i) || 
                               sshData.match(/端口\s*[:：]\s*(\d+)/i) || 
                               sshData.match(/port\s*[:：]\s*(\d+)/i);
@@ -549,7 +651,6 @@ export default {
             }
           } catch (parseError) {
             console.error('解析SSH端口数据出错:', parseError);
-            // 默认使用服务器配置中的端口
             if (this.server && this.server.port) {
               this.sshPort = this.server.port;
               console.log(`使用服务器配置的端口: ${this.sshPort}`);
@@ -572,6 +673,14 @@ export default {
         return;
       }
       
+      const now = Date.now();
+      if (this.dataCache.inboundPorts && 
+          (now - this.cacheTimestamps.inboundPorts) < this.cacheTTL) {
+        this.inboundPorts = this.dataCache.inboundPorts;
+        console.log('使用缓存的入网端口数据');
+        return;
+      }
+      
       try {
         this.loadingPorts = true;
         const response = await this.getInboundPorts(this.serverId);
@@ -579,7 +688,6 @@ export default {
         if (response && response.success) {
           const data = response.data || { tcp: [], udp: [] };
           
-          // 合并TCP和UDP端口，去重并标记为"TCP|UDP"
           const uniquePorts = [...new Set([...(data.tcp || []), ...(data.udp || [])])];
           const formattedPorts = uniquePorts.map(port => ({ 
             port, 
@@ -588,6 +696,12 @@ export default {
           
           console.log('处理后的端口数据:', formattedPorts);
           this.inboundPorts = formattedPorts;
+          this.dataCache.inboundPorts = formattedPorts;
+          this.cacheTimestamps.inboundPorts = now;
+          this.dataLoaded.inboundPorts = true;
+          
+          // 更新服务器缓存
+          await this.updateServerCacheItem('inboundPorts', response.data || { tcp: [], udp: [] });
           
           if (formattedPorts.length === 0) {
             this.commandOutput = '当前无放行端口';
@@ -613,15 +727,21 @@ export default {
         return;
       }
       
+      const now = Date.now();
+      if (this.dataCache.inboundIPs && 
+          (now - this.cacheTimestamps.inboundIPs) < this.cacheTTL) {
+        this.inboundIPs = this.dataCache.inboundIPs;
+        console.log('使用缓存的入网IP数据');
+        return;
+      }
+      
       try {
         this.loadingIPs = true;
         const response = await this.getInboundIPs(this.serverId);
         
         if (!response || !response.success) {
-          // 检查特定错误类型
           if (response && response.error && response.error.includes('连接')) {
             this.$message.error('服务器连接失败，请检查连接设置');
-            // 重置初始化状态
             this.resetInitSteps();
             this.isInitialized = false;
           } else if (response && response.error && response.error.includes('脚本')) {
@@ -636,13 +756,16 @@ export default {
           return;
         }
         
-        // 处理IP数据
         const ipData = response.data || [];
         
-        // 确保我们有一个标准格式的数组
         if (Array.isArray(ipData)) {
-          // 将每个IP转换为对象格式，便于表格渲染
-          this.inboundIPs = ipData.map(ip => ({ ip }));
+          this.inboundIPs = ipData.map(ip => typeof ip === 'string' ? { ip } : ip);
+          this.dataCache.inboundIPs = this.inboundIPs;
+          this.cacheTimestamps.inboundIPs = now;
+          this.dataLoaded.inboundIPs = true;
+          
+          // 更新服务器缓存
+          await this.updateServerCacheItem('inboundIPs', response.data || []);
           
           if (ipData.length === 0) {
             this.commandOutput = '当前无放行IP';
@@ -669,7 +792,6 @@ export default {
         return;
       }
       
-      // 其他代码不变...
     },
     async blockBTPT() {
       if (!this.hasValidServerId) {
@@ -683,6 +805,8 @@ export default {
         
         if (response && response.success) {
           this.$message.success('成功阻止BT/PT流量');
+          this.invalidateCache('blockList');
+          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
           await this.refreshBlockList();
         } else {
           this.$message.error(response?.error || '阻止BT/PT失败');
@@ -705,6 +829,8 @@ export default {
         
         if (response && response.success) {
           this.$message.success('成功阻止垃圾邮件流量');
+          this.invalidateCache('blockList');
+          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
           await this.refreshBlockList();
         } else {
           this.$message.error(response?.error || '阻止垃圾邮件失败');
@@ -727,6 +853,8 @@ export default {
         
         if (response && response.success) {
           this.$message.success('成功阻止所有流量');
+          this.invalidateCache('blockList');
+          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
           await this.refreshBlockList();
         } else {
           this.$message.error(response?.error || '阻止所有流量失败');
@@ -758,6 +886,8 @@ export default {
         if (response && response.success) {
           this.$message.success(`成功阻止端口: ${this.customPorts}`);
           this.customPorts = '';
+          this.invalidateCache('blockList');
+          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
           await this.refreshBlockList();
         } else {
           this.$message.error(response?.error || '阻止自定义端口失败');
@@ -789,6 +919,8 @@ export default {
         if (response && response.success) {
           this.$message.success(`成功阻止关键词: ${this.customKeyword}`);
           this.customKeyword = '';
+          this.invalidateCache('blockList');
+          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
           await this.refreshBlockList();
         } else {
           this.$message.error(response?.error || '阻止自定义关键词失败');
@@ -811,6 +943,8 @@ export default {
         
         if (response && response.success) {
           this.$message.success('成功取消阻止BT/PT流量');
+          this.invalidateCache('blockList');
+          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
           await this.refreshBlockList();
         } else {
           this.$message.error(response?.error || '取消阻止BT/PT失败');
@@ -833,6 +967,8 @@ export default {
         
         if (response && response.success) {
           this.$message.success('成功取消阻止垃圾邮件流量');
+          this.invalidateCache('blockList');
+          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
           await this.refreshBlockList();
         } else {
           this.$message.error(response?.error || '取消阻止垃圾邮件失败');
@@ -855,6 +991,8 @@ export default {
         
         if (response && response.success) {
           this.$message.success('成功取消阻止所有流量');
+          this.invalidateCache('blockList');
+          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
           await this.refreshBlockList();
         } else {
           this.$message.error(response?.error || '取消阻止所有流量失败');
@@ -886,6 +1024,8 @@ export default {
         if (response && response.success) {
           this.$message.success(`成功取消阻止端口: ${this.customUnblockPorts}`);
           this.customUnblockPorts = '';
+          this.invalidateCache('blockList');
+          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
           await this.refreshBlockList();
         } else {
           this.$message.error(response?.error || '取消阻止自定义端口失败');
@@ -917,6 +1057,8 @@ export default {
         if (response && response.success) {
           this.$message.success(`成功取消阻止关键词: ${this.customUnblockKeyword}`);
           this.customUnblockKeyword = '';
+          this.invalidateCache('blockList');
+          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
           await this.refreshBlockList();
         } else {
           this.$message.error(response?.error || '取消阻止自定义关键词失败');
@@ -939,6 +1081,8 @@ export default {
         
         if (response && response.success) {
           this.$message.success('成功取消阻止所有关键词');
+          this.invalidateCache('blockList');
+          // 不再调用clearServerCacheAfterChange，而是只刷新blockList
           await this.refreshBlockList();
         } else {
           this.$message.error(response?.error || '取消阻止所有关键词失败');
@@ -970,6 +1114,8 @@ export default {
         if (response && response.success) {
           this.$message.success(`成功允许入网端口: ${this.portToAllow}`);
           this.portToAllow = '';
+          this.invalidateCache('inboundPorts');
+          // 不再调用clearServerCacheAfterChange，而是只刷新inboundPorts
           await this.refreshInboundPorts();
         } else {
           this.$message.error(response?.error || '允许入网端口失败');
@@ -986,7 +1132,6 @@ export default {
         return;
       }
       
-      // 检查是否是SSH端口
       if (this.isSshPort(port)) {
         this.$message.error('不能取消SSH端口的放行，这可能导致无法连接服务器');
         return;
@@ -1001,6 +1146,8 @@ export default {
         
         if (response && response.success) {
           this.$message.success(`成功取消放行端口: ${port}`);
+          this.invalidateCache('inboundPorts');
+          // 不再调用clearServerCacheAfterChange，而是只刷新inboundPorts
           await this.refreshInboundPorts();
         } else {
           this.$message.error(response?.error || '取消放行端口失败');
@@ -1032,6 +1179,8 @@ export default {
         if (response && response.success) {
           this.$message.success(`成功允许入网IP: ${this.ipToAllow}`);
           this.ipToAllow = '';
+          this.invalidateCache('inboundIPs');
+          // 不再调用clearServerCacheAfterChange，而是只刷新inboundIPs
           await this.refreshInboundIPs();
         } else {
           this.$message.error(response?.error || '允许入网IP失败');
@@ -1048,7 +1197,6 @@ export default {
         return;
       }
       
-      // 确保我们有一个字符串形式的IP
       const ipAddress = typeof ip === 'object' ? ip.ip : ip;
       
       if (!ipAddress) {
@@ -1065,6 +1213,8 @@ export default {
         
         if (response && response.success) {
           this.$message.success(`成功取消放行IP: ${ipAddress}`);
+          this.invalidateCache('inboundIPs');
+          // 不再调用clearServerCacheAfterChange，而是只刷新inboundIPs
           await this.refreshInboundIPs();
         } else {
           this.$message.error(response?.error || '取消放行IP失败');
@@ -1106,7 +1256,11 @@ export default {
         
         if (response && response.success) {
           this.$message.success('成功清除所有规则');
+          // 清空所有缓存
+          await this.clearServerCacheAfterChange();
+          // 然后重新获取数据
           await this.refreshBlockList();
+          await this.refreshSSHPort();
           await this.refreshInboundPorts();
           await this.refreshInboundIPs();
         } else {
@@ -1128,7 +1282,6 @@ export default {
         this.deploying = true;
         this.commandOutput = '正在尝试手动部署脚本...\n';
         
-        // 尝试使用不同的方法部署脚本
         const response = await this.$store.dispatch('servers/executeCommand', {
           serverId: this.serverId,
           command: 'wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh && bash iPtato.sh'
@@ -1137,7 +1290,6 @@ export default {
         if (response && response.success) {
           this.commandOutput += '手动部署命令执行成功，正在验证安装结果...\n';
           
-          // 验证脚本是否安装成功
           const verifyResponse = await this.$store.dispatch('servers/executeCommand', {
             serverId: this.serverId,
             command: 'test -f /root/iptato.sh && echo "installed" || echo "not found"'
@@ -1152,7 +1304,7 @@ export default {
             this.initializationSteps[2].done = true;
             this.initStepActive = 3;
             
-            // 继续初始化流程
+            await this.clearServerCacheAfterChange();
             await this.refreshBlockList();
             await this.refreshSSHPort();
             await this.refreshInboundPorts();
@@ -1185,13 +1337,12 @@ export default {
         this.loading = true;
         this.commandOutput = '正在加载规则信息...\n';
         
-        // 刷新各种规则状态
+        await this.clearServerCacheAfterChange();
         await this.refreshBlockList();
         await this.refreshSSHPort();
         await this.refreshInboundPorts();
         await this.refreshInboundIPs();
         
-        // 完成初始化
         this.initializationSteps[3].done = true;
         this.isInitialized = true;
         this.$message.success('初始化完成');
@@ -1216,7 +1367,6 @@ export default {
         this.debugging = true;
         this.debugInfo = '正在检查脚本存在状态...\n';
         
-        // 使用不同的命令检查脚本是否存在
         const commands = [
           'ls -la /root/iPtato.sh',
           'ls -la /root/iptato.sh',
@@ -1251,7 +1401,6 @@ export default {
           }
         }
         
-        // 检查是否可以执行脚本
         this.debugInfo += '\n尝试直接执行脚本...\n';
         const execResponse = await this.$store.dispatch('servers/executeCommand', {
           serverId: this.serverId,
@@ -1287,7 +1436,6 @@ export default {
         this.debugging = true;
         this.debugInfo = '正在测试服务器连接...\n';
         
-        // 基本连接测试
         this.debugInfo += '1. 检查服务器信息:\n';
         const serverResponse = await this.getServer(this.serverId);
         if (serverResponse && serverResponse.success) {
@@ -1297,7 +1445,6 @@ export default {
           this.debugInfo += `获取服务器信息失败: ${serverResponse?.error || '未知错误'}\n`;
         }
         
-        // 尝试重新连接服务器
         this.debugInfo += '\n尝试重新连接服务器...\n';
         try {
           const connectResponse = await this.connectServer(this.serverId);
@@ -1310,7 +1457,6 @@ export default {
           this.debugInfo += `重新连接出错: ${connError.message}\n`;
         }
         
-        // 执行简单命令
         this.debugInfo += '\n2. 执行简单命令测试:\n';
         const commandResponse = await this.$store.dispatch('servers/executeCommand', {
           serverId: this.serverId,
@@ -1325,13 +1471,11 @@ export default {
           this.debugInfo += `服务器连接可能存在问题\n`;
         }
         
-        // 检查后端API配置
         this.debugInfo += '\n3. 检查前后端连接配置:\n';
         const baseURL = process.env.VUE_APP_API_URL || window.location.origin;
         this.debugInfo += `API基础URL: ${baseURL}\n`;
         this.debugInfo += `当前连接模式: ${process.env.NODE_ENV}\n`;
         
-        // 检查网络连接
         this.debugInfo += '\n4. 检查网络连接:\n';
         try {
           const pingResponse = await this.$store.dispatch('servers/executeCommand', {
@@ -1366,7 +1510,6 @@ export default {
         this.debugging = true;
         this.debugInfo = '正在重置连接状态...\n';
         
-        // 执行断开连接命令
         try {
           this.debugInfo += '尝试断开当前连接...\n';
           const disconnectCommand = await this.$store.dispatch('servers/executeCommand', {
@@ -1380,7 +1523,6 @@ export default {
           this.debugInfo += `断开连接测试出错: ${disconnectError.message}\n`;
         }
         
-        // 尝试重新连接服务器
         this.debugInfo += '尝试重新连接服务器...\n';
         
         try {
@@ -1394,12 +1536,10 @@ export default {
           this.debugInfo += `重新连接出错: ${connError.message}\n`;
         }
         
-        // 重置本地初始化状态
         this.resetInitSteps();
         this.isInitialized = false;
         this.initStepActive = 0;
         
-        // 重新获取服务器信息
         await this.checkInitialization();
         this.debugInfo += '初始化状态已重置，并重新检查\n';
         this.$message.success('连接状态已重置');
@@ -1420,11 +1560,10 @@ export default {
         this.loading = true;
         this.commandOutput = '正在手动初始化...\n';
         
-        // 标记所有步骤为完成
         this.initializationSteps.forEach(step => step.done = true);
         this.isInitialized = true;
         
-        // 刷新所有数据
+        await this.clearServerCacheAfterChange();
         await this.refreshBlockList();
         await this.refreshSSHPort();
         await this.refreshInboundPorts();
@@ -1440,7 +1579,6 @@ export default {
       }
     },
     
-    // 生成手动执行命令
     async generateManualCommands() {
       if (!this.hasValidServerId) {
         this.$message.error('未指定服务器ID，无法生成命令');
@@ -1451,19 +1589,16 @@ export default {
         this.debugging = true;
         this.debugInfo = '以下是您可以直接在服务器上执行的命令：\n\n';
         
-        // 1. 部署iPtato脚本的命令
         this.debugInfo += '## 1. 部署iPtato脚本\n';
         this.debugInfo += '```\n';
         this.debugInfo += 'cd ~ && wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh\n';
         this.debugInfo += '```\n\n';
         
-        // 2. 测试iPtato脚本是否正常工作
         this.debugInfo += '## 2. 测试iPtato脚本\n';
         this.debugInfo += '```\n';
         this.debugInfo += './iPtato.sh\n';
         this.debugInfo += '```\n\n';
         
-        // 3. 常用操作命令
         this.debugInfo += '## 3. 常用操作命令\n';
         this.debugInfo += '```\n';
         this.debugInfo += '# 阻止BT/PT流量\n';
@@ -1474,7 +1609,6 @@ export default {
         this.debugInfo += './iPtato.sh 101\n';
         this.debugInfo += '```\n\n';
         
-        // 添加说明
         this.debugInfo += '## 使用方法\n';
         this.debugInfo += '1. 通过SSH工具连接到您的服务器\n';
         this.debugInfo += '2. 复制并粘贴上述命令到SSH终端执行\n';
@@ -1505,6 +1639,13 @@ export default {
         if (response && response.success) {
           this.$message.success('脚本部署成功');
           this.commandOutput += '\n脚本部署成功';
+          
+          // 部署成功后重新加载规则数据
+          await this.clearServerCacheAfterChange();
+          await this.refreshBlockList();
+          await this.refreshSSHPort();
+          await this.refreshInboundPorts();
+          await this.refreshInboundIPs();
         } else {
           const errorMsg = response?.error || '脚本部署失败';
           this.$message.error(`脚本部署失败: ${errorMsg}`);
@@ -1518,23 +1659,18 @@ export default {
       }
     },
     isSshPort(port) {
-      // 首先检查是否有从API获取的SSH端口
       if (this.sshPort && this.sshPort === parseInt(port, 10)) {
         return true;
       }
       
-      // 然后检查服务器配置中的端口
       if (this.server && this.server.port === parseInt(port, 10)) {
         return true;
       }
       
-      // 常见的SSH端口
       const commonSshPorts = [22, 2222];
       return commonSshPorts.includes(parseInt(port, 10));
     },
-    // 添加服务器状态检查定时器
     startServerStatusCheck() {
-      // 每30秒检查一次服务器状态
       this.statusCheckTimer = setInterval(async () => {
         if (this.hasValidServerId) {
           try {
@@ -1543,15 +1679,12 @@ export default {
               const newStatus = response.data.status;
               const oldStatus = this.server ? this.server.status : null;
               
-              // 更新服务器信息
               this.server = response.data;
               
-              // 如果状态从离线变为在线，通知用户
               if (oldStatus !== 'online' && newStatus === 'online') {
                 this.$message.success('服务器已恢复在线状态');
               }
               
-              // 如果状态从在线变为离线，通知用户
               if (oldStatus === 'online' && newStatus !== 'online') {
                 this.$message.warning('服务器已离线，无法管理防火墙规则');
               }
@@ -1560,10 +1693,9 @@ export default {
             console.error('检查服务器状态出错:', error);
           }
         }
-      }, 30000); // 30秒检查一次
+      }, 30000);
     },
     
-    // 停止服务器状态检查
     stopServerStatusCheck() {
       if (this.statusCheckTimer) {
         clearInterval(this.statusCheckTimer);
@@ -1594,6 +1726,188 @@ export default {
         this.commandOutput += `\n连接服务器错误: ${error.message}`;
       } finally {
         this.connecting = false;
+      }
+    },
+    invalidateCache(cacheKey) {
+      if (cacheKey) {
+        this.cacheTimestamps[cacheKey] = 0;
+        this.dataLoaded[cacheKey] = false;
+      } else {
+        Object.keys(this.cacheTimestamps).forEach(key => {
+          this.cacheTimestamps[key] = 0;
+          this.dataLoaded[key] = false;
+        });
+      }
+    },
+    async loadServerCache() {
+      if (!this.hasValidServerId) {
+        return false;
+      }
+      
+      try {
+        const updateResponse = await this.getCacheLastUpdate(this.serverId);
+        if (!updateResponse.success) {
+          console.log('服务器缓存不存在或无法访问');
+          return false;
+        }
+        
+        this.serverCacheLastUpdate = updateResponse.data.lastUpdate;
+        this.serverCacheAvailable = true;
+        
+        const cacheResponse = await this.getServerCache(this.serverId);
+        if (!cacheResponse.success) {
+          return false;
+        }
+        
+        const cache = cacheResponse.data;
+        
+        if (cache.data.blockList) {
+          this.blockList = cache.data.blockList;
+          this.dataCache.blockList = cache.data.blockList;
+          this.cacheTimestamps.blockList = Date.now();
+          this.dataLoaded.blockList = true;
+        }
+        
+        if (cache.data.sshPortStatus) {
+          this.sshPortStatus = cache.data.sshPortStatus;
+          this.dataCache.sshPortStatus = cache.data.sshPortStatus;
+          this.cacheTimestamps.sshPortStatus = Date.now();
+          this.dataLoaded.sshPortStatus = true;
+          
+          try {
+            if (typeof cache.data.sshPortStatus === 'string') {
+              const portMatch = cache.data.sshPortStatus.match(/SSH端口\s*[:：]\s*(\d+)/i) || 
+                            cache.data.sshPortStatus.match(/端口\s*[:：]\s*(\d+)/i) || 
+                            cache.data.sshPortStatus.match(/port\s*[:：]\s*(\d+)/i);
+              if (portMatch && portMatch[1]) {
+                this.sshPort = parseInt(portMatch[1], 10);
+              }
+            }
+          } catch (e) {
+            console.error('解析SSH端口出错:', e);
+          }
+        }
+        
+        if (cache.data.inboundPorts) {
+          // 处理inboundPorts数据格式，确保与refreshInboundPorts方法一致
+          const portsData = cache.data.inboundPorts;
+          const uniquePorts = [...new Set([...(portsData.tcp || []), ...(portsData.udp || [])])];
+          const formattedPorts = uniquePorts.map(port => ({ 
+            port, 
+            protocol: 'TCP|UDP' 
+          }));
+          this.inboundPorts = formattedPorts;
+          this.dataCache.inboundPorts = formattedPorts;
+          this.cacheTimestamps.inboundPorts = Date.now();
+          this.dataLoaded.inboundPorts = true;
+        }
+        
+        if (cache.data.inboundIPs) {
+          this.inboundIPs = Array.isArray(cache.data.inboundIPs) 
+            ? cache.data.inboundIPs.map(ip => typeof ip === 'string' ? { ip } : ip)
+            : [];
+          this.dataCache.inboundIPs = this.inboundIPs;
+          this.cacheTimestamps.inboundIPs = Date.now();
+          this.dataLoaded.inboundIPs = true;
+        }
+        
+        console.log('已成功加载服务器缓存数据');
+        this.commandOutput = '已加载缓存数据';
+        return true;
+      } catch (error) {
+        console.error('加载服务器缓存失败:', error);
+        return false;
+      }
+    },
+    async clearServerCacheAfterChange() {
+      if (!this.hasValidServerId) return;
+      
+      try {
+        await this.clearServerCache(this.serverId);
+        this.serverCacheAvailable = false;
+        this.serverCacheLastUpdate = null;
+        console.log('服务器缓存已清除');
+      } catch (error) {
+        console.error('清除服务器缓存失败:', error);
+      }
+    },
+    async updateServerCacheItem(cacheKey, data) {
+      if (!this.hasValidServerId) return;
+      
+      try {
+        // 先从本地缓存中获取最新数据
+        const cacheResponse = await this.getServerCache(this.serverId);
+        if (cacheResponse && cacheResponse.success) {
+          const cache = cacheResponse.data;
+          
+          // 构建更新后的数据结构
+          const updateData = { ...cache.data };
+          updateData.data[cacheKey] = data;
+          
+          // 调用后端API更新缓存项
+          const response = await this.$store.dispatch('rules/updateCacheItem', {
+            serverId: this.serverId,
+            key: cacheKey,
+            value: data
+          });
+          
+          if (response && response.success) {
+            console.log(`服务器缓存项 ${cacheKey} 已更新`);
+          } else {
+            console.warn(`更新服务器缓存项 ${cacheKey} 失败`);
+          }
+        }
+      } catch (error) {
+        console.error(`更新服务器缓存项 ${cacheKey} 出错:`, error);
+      }
+      
+      // 同时更新前端本地缓存
+      this.invalidateCache(cacheKey);
+    },
+    // 添加自动重置连接状态方法，与用户手动点击重置按钮调用的方法区分开
+    async autoResetConnectionState() {
+      if (!this.hasValidServerId) return false;
+      
+      try {
+        this.commandOutput = '正在自动重置连接状态...';
+        this.loading = true;
+        
+        // 尝试重新连接服务器
+        const connectResponse = await this.connectServer(this.serverId);
+        if (connectResponse && connectResponse.success) {
+          console.log('服务器重新连接成功');
+          // 更新服务器状态
+          const serverResponse = await this.getServer(this.serverId);
+          if (serverResponse && serverResponse.success) {
+            this.server = serverResponse.data;
+          }
+          return true;
+        } else {
+          console.warn('服务器重新连接失败，将尝试初始化过程');
+          return false;
+        }
+      } catch (error) {
+        console.error('自动重置连接状态失败:', error);
+        return false;
+      } finally {
+        this.loading = false;
+      }
+    }
+  },
+  watch: {
+    activeTab(newTab, oldTab) {
+      if (newTab === 'outbound' && !this.dataLoaded.blockList) {
+        this.refreshBlockList();
+      } else if (newTab === 'inbound') {
+        if (!this.dataLoaded.sshPortStatus) {
+          this.refreshSSHPort();
+        }
+        if (!this.dataLoaded.inboundPorts) {
+          setTimeout(() => this.refreshInboundPorts(), 500);
+        }
+        if (!this.dataLoaded.inboundIPs) {
+          setTimeout(() => this.refreshInboundIPs(), 1000);
+        }
       }
     }
   }

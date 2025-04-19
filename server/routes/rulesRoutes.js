@@ -28,4 +28,10 @@ router.post('/:serverId/inbound/disallow/ips', rulesController.disallowInboundIP
 router.get('/:serverId/ssh-port', rulesController.getSSHPort);
 router.post('/:serverId/clear-all', rulesController.clearAllRules);
 
+// 规则缓存路由
+router.get('/:serverId/cache', rulesController.getServerRulesCache);
+router.get('/:serverId/cache/last-update', rulesController.getCacheLastUpdate);
+router.delete('/:serverId/cache', rulesController.clearServerCache);
+router.put('/:serverId/cache/:key', rulesController.updateCacheItem);
+
 module.exports = router; 

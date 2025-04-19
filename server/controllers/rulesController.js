@@ -1,5 +1,6 @@
 const iptablesService = require('../services/iptablesService');
 const sshService = require('../services/sshService');
+const cacheService = require('../services/cacheService');
 
 /**
  * 检查服务器连接状态
@@ -18,11 +19,74 @@ const checkServerConnection = (serverId) => {
 };
 
 /**
- * 获取当前封禁列表
+ * 获取服务器规则缓存
+ */
+exports.getServerRulesCache = async (req, res) => {
+  try {
+    const serverId = req.params.serverId;
+    const cache = await cacheService.getServerRulesCache(serverId);
+    
+    if (!cache) {
+      return res.status(404).json({
+        success: false,
+        message: '服务器规则缓存不存在'
+      });
+    }
+    
+    res.status(200).json({
+      success: true,
+      data: cache
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: '获取服务器规则缓存失败',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * 获取缓存最后更新时间
+ */
+exports.getCacheLastUpdate = async (req, res) => {
+  try {
+    const serverId = req.params.serverId;
+    const lastUpdate = await cacheService.getServerCacheLastUpdate(serverId);
+    
+    if (!lastUpdate) {
+      return res.status(404).json({
+        success: false,
+        message: '服务器规则缓存不存在'
+      });
+    }
+    
+    res.status(200).json({
+      success: true,
+      data: { lastUpdate }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: '获取缓存最后更新时间失败',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * 获取当前封禁列表 (修改以支持缓存)
  */
 exports.getBlockList = async (req, res) => {
   try {
-    const result = await iptablesService.getBlockList(req.params.serverId);
+    const serverId = req.params.serverId;
+    
+    const result = await iptablesService.getBlockList(serverId);
+    
+    if (result.success) {
+      // 如果请求成功，更新缓存
+      await cacheService.updateServerCacheItem(serverId, 'blockList', result.data);
+    }
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -306,11 +370,17 @@ exports.unblockAllKeywords = async (req, res) => {
 };
 
 /**
- * 获取当前放行的入网端口
+ * 获取当前放行的入网端口 (修改以支持缓存)
  */
 exports.getInboundPorts = async (req, res) => {
   try {
-    const result = await iptablesService.getInboundPorts(req.params.serverId);
+    const serverId = req.params.serverId;
+    const result = await iptablesService.getInboundPorts(serverId);
+    
+    if (result.success) {
+      // 如果请求成功，更新缓存
+      await cacheService.updateServerCacheItem(serverId, 'inboundPorts', result.data);
+    }
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -327,11 +397,17 @@ exports.getInboundPorts = async (req, res) => {
 };
 
 /**
- * 获取当前放行的入网IP
+ * 获取当前放行的入网IP (修改以支持缓存)
  */
 exports.getInboundIPs = async (req, res) => {
   try {
-    const result = await iptablesService.getInboundIPs(req.params.serverId);
+    const serverId = req.params.serverId;
+    const result = await iptablesService.getInboundIPs(serverId);
+    
+    if (result.success) {
+      // 如果请求成功，更新缓存
+      await cacheService.updateServerCacheItem(serverId, 'inboundIPs', result.data);
+    }
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -468,11 +544,17 @@ exports.disallowInboundIPs = async (req, res) => {
 };
 
 /**
- * 查看当前SSH端口
+ * 获取当前SSH端口 (修改以支持缓存)
  */
 exports.getSSHPort = async (req, res) => {
   try {
-    const result = await iptablesService.getSSHPort(req.params.serverId);
+    const serverId = req.params.serverId;
+    const result = await iptablesService.getSSHPort(serverId);
+    
+    if (result.success) {
+      // 如果请求成功，更新缓存
+      await cacheService.updateServerCacheItem(serverId, 'sshPortStatus', result.data);
+    }
     
     res.status(result.success ? 200 : 400).json({
       success: result.success,
@@ -504,6 +586,58 @@ exports.clearAllRules = async (req, res) => {
     res.status(500).json({
       success: false,
       message: '清空所有规则失败',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * 清除服务器规则缓存
+ */
+exports.clearServerCache = async (req, res) => {
+  try {
+    const serverId = req.params.serverId;
+    const success = await cacheService.clearServerRulesCache(serverId);
+    
+    res.status(200).json({
+      success: success,
+      message: success ? '缓存清除成功' : '缓存清除失败'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: '清除缓存失败',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * 更新服务器缓存项
+ */
+exports.updateCacheItem = async (req, res) => {
+  try {
+    const serverId = req.params.serverId;
+    const key = req.params.key;
+    const { value } = req.body;
+    
+    if (!key) {
+      return res.status(400).json({
+        success: false,
+        message: '缓存键名不能为空'
+      });
+    }
+    
+    const success = await cacheService.updateServerCacheItem(serverId, key, value);
+    
+    res.status(200).json({
+      success: success,
+      message: success ? `缓存项 ${key} 更新成功` : `缓存项 ${key} 更新失败`
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: '更新缓存项失败',
       error: error.message
     });
   }
