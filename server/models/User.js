@@ -88,6 +88,29 @@ class User {
     const { password: _, ...userWithoutPassword } = user;
     return userWithoutPassword;
   }
+
+  // 更新用户密码
+  async updatePassword(userId, newPassword) {
+    const users = this.getUsers();
+    const userIndex = users.findIndex(user => user.id === userId);
+    
+    if (userIndex === -1) {
+      throw new Error('用户不存在');
+    }
+    
+    // 加密新密码
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+    
+    // 更新用户密码
+    users[userIndex].password = hashedPassword;
+    users[userIndex].updatedAt = new Date().toISOString();
+    
+    // 保存更新
+    this.saveUsers(users);
+    
+    return true;
+  }
 }
 
 module.exports = new User(); 

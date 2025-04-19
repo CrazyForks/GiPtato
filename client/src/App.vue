@@ -5,8 +5,15 @@
         <h1>GiPtato 防火墙管理系统</h1>
       </div>
       <div class="header-right">
-        <span v-if="currentUser">{{ currentUser.username }}</span>
-        <el-button type="text" class="logout-btn" @click="handleLogout">退出登录</el-button>
+        <el-dropdown trigger="click" @command="handleCommand">
+          <span class="user-dropdown">
+            {{ currentUser.username }} <i class="el-icon-arrow-down el-icon--right"></i>
+          </span>
+          <el-dropdown-menu slot="dropdown">
+            <el-dropdown-item command="profile">个人资料</el-dropdown-item>
+            <el-dropdown-item command="logout">退出登录</el-dropdown-item>
+          </el-dropdown-menu>
+        </el-dropdown>
       </div>
     </el-header>
     <router-view />
@@ -24,6 +31,14 @@ export default {
   },
   methods: {
     ...mapActions(['logout', 'getCurrentUser']),
+    
+    handleCommand(command) {
+      if (command === 'logout') {
+        this.handleLogout();
+      } else if (command === 'profile') {
+        this.$router.push('/profile');
+      }
+    },
     
     handleLogout() {
       this.logout();
@@ -76,8 +91,9 @@ html, body {
   align-items: center;
 }
 
-.header-right span {
-  margin-right: 10px;
+.user-dropdown {
+  color: white;
+  cursor: pointer;
 }
 
 .logout-btn {

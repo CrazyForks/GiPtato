@@ -109,4 +109,47 @@ exports.getCurrentUser = async (req, res) => {
       error: error.message
     });
   }
+};
+
+// 更新用户密码
+exports.updatePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    
+    // 验证输入
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: '当前密码和新密码不能为空'
+      });
+    }
+    
+    // 获取当前用户信息
+    const userId = req.user.id;
+    const username = req.user.username;
+    
+    // 验证当前密码
+    const user = await User.validateUser(username, currentPassword);
+    
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: '当前密码错误'
+      });
+    }
+    
+    // 更新密码
+    await User.updatePassword(userId, newPassword);
+    
+    res.status(200).json({
+      success: true,
+      message: '密码更新成功'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: '更新密码失败',
+      error: error.message
+    });
+  }
 }; 
