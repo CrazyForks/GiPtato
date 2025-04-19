@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
-require('dotenv').config();
+// 加载根目录的环境变量文件
+require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 // 使用环境变量中的DATA_DIR或默认路径，处理相对路径
 let dataDir;

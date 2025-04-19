@@ -1,4 +1,4 @@
-# iPtato Panel - 多服务器防火墙规则管理面板
+# GiPtato Panel - 多服务器防火墙规则管理面板
 
 基于iPtato.sh脚本开发的可视化多服务器防火墙规则管理面板，支持通过SSH远程连接管理多台服务器的iptables规则。
 
@@ -14,8 +14,8 @@
 ## 技术栈
 
 - **后端**：Node.js、Express、SSH2、本地JSON存储
-- **前端**：Vue.js、Element UI
-- **通信**：RESTful API、WebSockets
+- **前端**：Vue.js 2.x、Element UI、Axios
+- **通信**：RESTful API
 
 ## 系统要求
 
@@ -27,8 +27,8 @@
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/yourusername/iptato-panel.git
-cd iptato-panel
+git clone https://github.com/yourusername/giptato-panel.git
+cd giptato-panel
 ```
 
 ### 2. 安装依赖
@@ -36,12 +36,18 @@ cd iptato-panel
 一键安装所有依赖:
 
 ```bash
+npm run setup
+```
+
+或使用:
+
+```bash
 npm run install:all
 ```
 
 ### 3. 配置环境变量
 
-复制`.env.example`文件为`.env`，并根据实际情况修改:
+复制`.env.example`文件为`.env`，或直接创建`.env`文件，并根据实际情况修改:
 
 ```bash
 cp .env.example .env
@@ -61,6 +67,14 @@ npm run build
 ```
 
 ### 5. 启动服务
+
+使用一键启动脚本:
+
+```bash
+./start-all.sh
+```
+
+或单独启动服务器:
 
 ```bash
 npm start
@@ -86,9 +100,14 @@ npm run dev:server
 npm run dev:client
 ```
 
+## 服务访问
+
+- 前端界面: http://localhost:8080
+- 后端API: http://localhost:3001
+
 ## 使用指南
 
-1. 访问`http://localhost:3000`进入管理面板
+1. 访问`http://localhost:8080`进入管理面板
 2. 添加服务器：点击"添加服务器"，填写服务器信息并测试连接
 3. 连接服务器：在服务器列表中点击"连接"按钮
 4. 管理规则：点击"管理规则"进入相应服务器的规则管理页面

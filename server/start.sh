@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# 加载环境变量（如果存在）
-if [ -f .env ]; then
-  export $(cat .env | grep -v '#' | awk '/=/ {print $1}')
+# 加载根目录的环境变量（如果存在）
+if [ -f ../.env ]; then
+  export $(cat ../.env | grep -v '#' | awk '/=/ {print $1}')
 fi
 
 # 根据环境变量选择启动模式

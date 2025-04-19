@@ -2,7 +2,8 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-require('dotenv').config();
+// 加载根目录的环境变量文件
+require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 // 打印环境变量
 console.log('===== 服务器配置 =====');
