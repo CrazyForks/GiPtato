@@ -4,8 +4,8 @@
       <h1>防火墙规则管理</h1>
       <div>
         <el-button type="primary" @click="$router.push('/servers')">返回服务器列表</el-button>
-        <el-button type="success" @click="deployIptatoScript" :loading="deploying">部署脚本</el-button>
-        <el-button type="danger" @click="confirmClearRules">清空所有规则</el-button>
+        <el-button type="success" @click="deployIptatoScript" :loading="deploying" :disabled="!isServerOnline">部署脚本</el-button>
+        <el-button type="danger" @click="confirmClearRules" :disabled="!isServerOnline">清空所有规则</el-button>
       </div>
     </div>
 
@@ -16,149 +16,171 @@
 
     <el-tabs v-model="activeTab" type="card">
       <el-tab-pane label="出网控制" name="outbound">
-        <el-card>
-          <div slot="header">
-            <span>当前封禁列表</span>
-            <el-button style="float: right; padding: 3px 0" type="text" @click="refreshBlockList">刷新</el-button>
-          </div>
-          
-          <pre v-if="blockList" class="output">{{ blockList }}</pre>
-          <div v-else>加载中...</div>
-        </el-card>
+        <el-alert
+          v-if="!isServerOnline"
+          title="服务器当前处于离线状态"
+          type="warning"
+          description="服务器离线时无法管理防火墙规则，请先连接服务器"
+          show-icon
+          :closable="false"
+          style="margin-bottom: 15px;">
+        </el-alert>
+        <div v-loading="!isServerOnline">
+          <el-card>
+            <div slot="header">
+              <span>当前封禁列表</span>
+              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshBlockList" :disabled="!isServerOnline">刷新</el-button>
+            </div>
+            
+            <pre v-if="blockList" class="output">{{ blockList }}</pre>
+            <div v-else>加载中...</div>
+          </el-card>
 
-        <el-card style="margin-top: 20px;">
-          <div slot="header">
-            <span>封禁管理</span>
-          </div>
-          <el-button-group>
-            <el-button type="primary" @click="blockBTPT" :loading="loading">封禁BT/PT</el-button>
-            <el-button type="primary" @click="blockSPAM" :loading="loading">封禁SPAM</el-button>
-            <el-button type="primary" @click="blockAll" :loading="loading">封禁全部</el-button>
-          </el-button-group>
-          
-          <el-divider></el-divider>
-          
-          <el-form :inline="true" @submit.native.prevent="blockCustomPorts">
-            <el-form-item label="自定义端口">
-              <el-input v-model="customPorts" placeholder="如: 6881,6882-6889"></el-input>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="warning" @click="blockCustomPorts" :loading="loading">封禁</el-button>
-            </el-form-item>
-          </el-form>
-          
-          <el-form :inline="true" @submit.native.prevent="blockCustomKeyword">
-            <el-form-item label="自定义关键词">
-              <el-input v-model="customKeyword" placeholder="如: youtube.com"></el-input>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="warning" @click="blockCustomKeyword" :loading="loading">封禁</el-button>
-            </el-form-item>
-          </el-form>
-        </el-card>
+          <el-card style="margin-top: 20px;">
+            <div slot="header">
+              <span>封禁管理</span>
+            </div>
+            <el-button-group>
+              <el-button type="primary" @click="blockBTPT" :loading="loading" :disabled="!isServerOnline">封禁BT/PT</el-button>
+              <el-button type="primary" @click="blockSPAM" :loading="loading" :disabled="!isServerOnline">封禁SPAM</el-button>
+              <el-button type="primary" @click="blockAll" :loading="loading" :disabled="!isServerOnline">封禁全部</el-button>
+            </el-button-group>
+            
+            <el-divider></el-divider>
+            
+            <el-form :inline="true" @submit.native.prevent="blockCustomPorts">
+              <el-form-item label="自定义端口">
+                <el-input v-model="customPorts" placeholder="如: 6881,6882-6889" :disabled="!isServerOnline"></el-input>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="warning" @click="blockCustomPorts" :loading="loading" :disabled="!isServerOnline">封禁</el-button>
+              </el-form-item>
+            </el-form>
+            
+            <el-form :inline="true" @submit.native.prevent="blockCustomKeyword">
+              <el-form-item label="自定义关键词">
+                <el-input v-model="customKeyword" placeholder="如: youtube.com" :disabled="!isServerOnline"></el-input>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="warning" @click="blockCustomKeyword" :loading="loading" :disabled="!isServerOnline">封禁</el-button>
+              </el-form-item>
+            </el-form>
+          </el-card>
 
-        <el-card style="margin-top: 20px;">
-          <div slot="header">
-            <span>解封管理</span>
-          </div>
-          <el-button-group>
-            <el-button type="success" @click="unblockBTPT" :loading="loading">解封BT/PT</el-button>
-            <el-button type="success" @click="unblockSPAM" :loading="loading">解封SPAM</el-button>
-            <el-button type="success" @click="unblockAll" :loading="loading">解封全部</el-button>
-          </el-button-group>
-          
-          <el-divider></el-divider>
-          
-          <el-form :inline="true" @submit.native.prevent="unblockCustomPorts">
-            <el-form-item label="自定义端口">
-              <el-input v-model="customUnblockPorts" placeholder="如: 6881,6882-6889"></el-input>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="success" @click="unblockCustomPorts" :loading="loading">解封</el-button>
-            </el-form-item>
-          </el-form>
-          
-          <el-form :inline="true" @submit.native.prevent="unblockCustomKeyword">
-            <el-form-item label="自定义关键词">
-              <el-input v-model="customUnblockKeyword" placeholder="如: youtube.com"></el-input>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="success" @click="unblockCustomKeyword" :loading="loading">解封</el-button>
-            </el-form-item>
-          </el-form>
-          
-          <el-button type="success" @click="unblockAllKeywords" :loading="loading">解封所有关键词</el-button>
-        </el-card>
+          <el-card style="margin-top: 20px;">
+            <div slot="header">
+              <span>解封管理</span>
+            </div>
+            <el-button-group>
+              <el-button type="success" @click="unblockBTPT" :loading="loading" :disabled="!isServerOnline">解封BT/PT</el-button>
+              <el-button type="success" @click="unblockSPAM" :loading="loading" :disabled="!isServerOnline">解封SPAM</el-button>
+              <el-button type="success" @click="unblockAll" :loading="loading" :disabled="!isServerOnline">解封全部</el-button>
+            </el-button-group>
+            
+            <el-divider></el-divider>
+            
+            <el-form :inline="true" @submit.native.prevent="unblockCustomPorts">
+              <el-form-item label="自定义端口">
+                <el-input v-model="customUnblockPorts" placeholder="如: 6881,6882-6889" :disabled="!isServerOnline"></el-input>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="success" @click="unblockCustomPorts" :loading="loading" :disabled="!isServerOnline">解封</el-button>
+              </el-form-item>
+            </el-form>
+            
+            <el-form :inline="true" @submit.native.prevent="unblockCustomKeyword">
+              <el-form-item label="自定义关键词">
+                <el-input v-model="customUnblockKeyword" placeholder="如: youtube.com" :disabled="!isServerOnline"></el-input>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="success" @click="unblockCustomKeyword" :loading="loading" :disabled="!isServerOnline">解封</el-button>
+              </el-form-item>
+            </el-form>
+            
+            <el-button type="success" @click="unblockAllKeywords" :loading="loading" :disabled="!isServerOnline">解封所有关键词</el-button>
+          </el-card>
+        </div>
       </el-tab-pane>
 
       <el-tab-pane label="入网控制" name="inbound">
-        <el-card>
-          <div slot="header">
-            <span>SSH端口状态</span>
-            <el-button style="float: right; padding: 3px 0" type="text" @click="refreshSSHPort">刷新</el-button>
-          </div>
-          
-          <pre v-if="sshPortStatus" class="output">{{ sshPortStatus }}</pre>
-          <div v-else>加载中...</div>
-        </el-card>
+        <el-alert
+          v-if="!isServerOnline"
+          title="服务器当前处于离线状态"
+          type="warning"
+          description="服务器离线时无法管理防火墙规则，请先连接服务器"
+          show-icon
+          :closable="false"
+          style="margin-bottom: 15px;">
+        </el-alert>
+        <div v-loading="!isServerOnline">
+          <el-card>
+            <div slot="header">
+              <span>SSH端口状态</span>
+              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshSSHPort" :disabled="!isServerOnline">刷新</el-button>
+            </div>
+            
+            <pre v-if="sshPortStatus" class="output">{{ sshPortStatus }}</pre>
+            <div v-else>加载中...</div>
+          </el-card>
 
-        <el-card style="margin-top: 20px;">
-          <div slot="header">
-            <span>入网端口管理</span>
-            <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundPorts">刷新</el-button>
-          </div>
-          
-          <el-table v-loading="loadingPorts" :data="inboundPorts" style="width: 100%">
-            <el-table-column prop="port" label="端口" width="180"></el-table-column>
-            <el-table-column prop="protocol" label="协议" width="100"></el-table-column>
-            <el-table-column label="操作">
-              <template slot-scope="scope">
-                <el-tooltip v-if="isSshPort(scope.row.port)" content="不能取消SSH端口放行，这可能导致无法连接服务器" placement="top">
-                  <el-button type="danger" size="mini" disabled>取消放行</el-button>
-                </el-tooltip>
-                <el-button v-else type="danger" size="mini" @click="disallowPort(scope.row.port)">取消放行</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          
-          <el-divider></el-divider>
-          
-          <el-form :inline="true" @submit.native.prevent="allowPort">
-            <el-form-item label="放行端口">
-              <el-input v-model="portToAllow" placeholder="如: 80,443"></el-input>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" @click="allowPort" :loading="loading">添加</el-button>
-            </el-form-item>
-          </el-form>
-        </el-card>
+          <el-card style="margin-top: 20px;">
+            <div slot="header">
+              <span>入网端口管理</span>
+              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundPorts" :disabled="!isServerOnline">刷新</el-button>
+            </div>
+            
+            <el-table v-loading="loadingPorts" :data="inboundPorts" style="width: 100%">
+              <el-table-column prop="port" label="端口" width="180"></el-table-column>
+              <el-table-column prop="protocol" label="协议" width="100"></el-table-column>
+              <el-table-column label="操作">
+                <template slot-scope="scope">
+                  <el-tooltip v-if="isSshPort(scope.row.port)" content="不能取消SSH端口放行，这可能导致无法连接服务器" placement="top">
+                    <el-button type="danger" size="mini" disabled>取消放行</el-button>
+                  </el-tooltip>
+                  <el-button v-else type="danger" size="mini" @click="disallowPort(scope.row.port)" :disabled="!isServerOnline">取消放行</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            
+            <el-divider></el-divider>
+            
+            <el-form :inline="true" @submit.native.prevent="allowPort">
+              <el-form-item label="放行端口">
+                <el-input v-model="portToAllow" placeholder="如: 80,443" :disabled="!isServerOnline"></el-input>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" @click="allowPort" :loading="loading" :disabled="!isServerOnline">添加</el-button>
+              </el-form-item>
+            </el-form>
+          </el-card>
 
-        <el-card style="margin-top: 20px;">
-          <div slot="header">
-            <span>入网IP管理</span>
-            <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundIPs">刷新</el-button>
-          </div>
-          
-          <el-table v-loading="loadingIPs" :data="inboundIPs" style="width: 100%">
-            <el-table-column prop="ip" label="IP地址" width="180"></el-table-column>
-            <el-table-column label="操作">
-              <template slot-scope="scope">
-                <el-button type="danger" size="mini" @click="disallowIP(scope.row.ip || scope.row)">取消放行</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          
-          <el-divider></el-divider>
-          
-          <el-form :inline="true" @submit.native.prevent="allowIP">
-            <el-form-item label="放行IP">
-              <el-input v-model="ipToAllow" placeholder="如: 192.168.1.1"></el-input>
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" @click="allowIP" :loading="loading">添加</el-button>
-            </el-form-item>
-          </el-form>
-        </el-card>
+          <el-card style="margin-top: 20px;">
+            <div slot="header">
+              <span>入网IP管理</span>
+              <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundIPs" :disabled="!isServerOnline">刷新</el-button>
+            </div>
+            
+            <el-table v-loading="loadingIPs" :data="inboundIPs" style="width: 100%">
+              <el-table-column prop="ip" label="IP地址" width="180"></el-table-column>
+              <el-table-column label="操作">
+                <template slot-scope="scope">
+                  <el-button type="danger" size="mini" @click="disallowIP(scope.row.ip || scope.row)" :disabled="!isServerOnline">取消放行</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+            
+            <el-divider></el-divider>
+            
+            <el-form :inline="true" @submit.native.prevent="allowIP">
+              <el-form-item label="放行IP">
+                <el-input v-model="ipToAllow" placeholder="如: 192.168.1.1" :disabled="!isServerOnline"></el-input>
+              </el-form-item>
+              <el-form-item>
+                <el-button type="primary" @click="allowIP" :loading="loading" :disabled="!isServerOnline">添加</el-button>
+              </el-form-item>
+            </el-form>
+          </el-card>
+        </div>
       </el-tab-pane>
     </el-tabs>
 
@@ -282,13 +304,17 @@ export default {
         { name: '加载规则', done: false }
       ],
       debugging: false,
-      debugInfo: ''
+      debugInfo: '',
+      statusCheckTimer: null
     };
   },
   computed: {
     ...mapGetters('servers', ['getLoading']),
     hasValidServerId() {
       return !!this.serverId && this.serverId !== 'undefined';
+    },
+    isServerOnline() {
+      return this.server && this.server.status === 'online';
     }
   },
   beforeRouteEnter(to, from, next) {
@@ -309,10 +335,17 @@ export default {
     
     if (this.hasValidServerId) {
       await this.checkInitialization();
+      
+      // 设置定时检查服务器状态
+      this.startServerStatusCheck();
     } else {
       this.commandOutput = '服务器ID无效，请返回服务器列表重新选择服务器';
       this.$message.error('服务器ID无效');
     }
+  },
+  beforeDestroy() {
+    // 清除定时器
+    this.stopServerStatusCheck();
   },
   methods: {
     ...mapActions('servers', [
@@ -1471,6 +1504,44 @@ export default {
       // 常见的SSH端口
       const commonSshPorts = [22, 2222];
       return commonSshPorts.includes(parseInt(port, 10));
+    },
+    // 添加服务器状态检查定时器
+    startServerStatusCheck() {
+      // 每30秒检查一次服务器状态
+      this.statusCheckTimer = setInterval(async () => {
+        if (this.hasValidServerId) {
+          try {
+            const response = await this.getServer(this.serverId);
+            if (response && response.success) {
+              const newStatus = response.data.status;
+              const oldStatus = this.server ? this.server.status : null;
+              
+              // 更新服务器信息
+              this.server = response.data;
+              
+              // 如果状态从离线变为在线，通知用户
+              if (oldStatus !== 'online' && newStatus === 'online') {
+                this.$message.success('服务器已恢复在线状态');
+              }
+              
+              // 如果状态从在线变为离线，通知用户
+              if (oldStatus === 'online' && newStatus !== 'online') {
+                this.$message.warning('服务器已离线，无法管理防火墙规则');
+              }
+            }
+          } catch (error) {
+            console.error('检查服务器状态出错:', error);
+          }
+        }
+      }, 30000); // 30秒检查一次
+    },
+    
+    // 停止服务器状态检查
+    stopServerStatusCheck() {
+      if (this.statusCheckTimer) {
+        clearInterval(this.statusCheckTimer);
+        this.statusCheckTimer = null;
+      }
     }
   }
 };

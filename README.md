@@ -27,8 +27,8 @@
 ### 1. 克隆项目
 
 ```bash
-git clone https://github.com/yourusername/giptato-panel.git
-cd giptato-panel
+git clone https://github.com/Fiftonb/GiPtato.git
+cd GiPtato
 ```
 
 ### 2. 安装依赖
@@ -56,28 +56,45 @@ cp .env.example .env
 配置示例:
 
 ```
-PORT=3000
+# 服务器配置
+PORT=3001
+CORS_ORIGIN=http://localhost:8080
+
+# 数据目录配置
 DATA_DIR=./server/data
+
+# 数据库配置
+DB_PATH=./data/database.json
+
+# 日志配置
+LOG_LEVEL=info
+LOG_DIR=./logs
+
+# 临时文件目录
+TMP_DIR=./tmp
+
+# 应用模式配置
+NODE_ENV=development
+# 设置为 true 可避免 nodemon 频繁重启
+STABLE_MODE=true
 ```
 
-### 4. 构建前端
+### 4. 构建与启动
+
+一键构建前端并启动服务:
 
 ```bash
+# 构建前端 (将构建结果输出到 server/public 目录)
 npm run build
+
+# 启动后端服务器
+npm start
 ```
 
-### 5. 启动服务
-
-使用一键启动脚本:
+或使用一键启动脚本(开发模式):
 
 ```bash
 ./start-all.sh
-```
-
-或单独启动服务器:
-
-```bash
-npm start
 ```
 
 ## 开发模式
@@ -102,12 +119,12 @@ npm run dev:client
 
 ## 服务访问
 
-- 前端界面: http://localhost:8080
-- 后端API: http://localhost:3001
+- 前端界面: http://localhost:8080 (开发模式)或 http://localhost:3001 (生产模式)
+- 后端API: http://localhost:3001/api
 
 ## 使用指南
 
-1. 访问`http://localhost:8080`进入管理面板
+1. 访问前端界面进入管理面板
 2. 添加服务器：点击"添加服务器"，填写服务器信息并测试连接
 3. 连接服务器：在服务器列表中点击"连接"按钮
 4. 管理规则：点击"管理规则"进入相应服务器的规则管理页面

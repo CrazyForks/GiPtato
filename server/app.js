@@ -34,7 +34,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // 静态文件服务
-app.use(express.static(path.join(__dirname, '../client/dist')));
+app.use(express.static(path.join(__dirname, 'public')));
 
 // 使用环境变量中的DATA_DIR或默认路径，处理相对路径
 let dataDir;
@@ -91,7 +91,7 @@ app.use('/api/rules', rulesRoutes);
 
 // 前端路由处理
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../client/dist/index.html'));
+  res.sendFile(path.join(__dirname, 'public/index.html'));
 });
 
 // 错误处理中间件
