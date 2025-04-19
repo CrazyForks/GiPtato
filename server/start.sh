@@ -5,6 +5,10 @@ if [ -f ../.env ]; then
   export $(cat ../.env | grep -v '#' | awk '/=/ {print $1}')
 fi
 
+# 创建初始管理员账户
+echo "检查并创建管理员账户..."
+node scripts/createAdmin.js
+
 # 根据环境变量选择启动模式
 if [ "$NODE_ENV" = "production" ]; then
   echo "以生产模式启动服务器..."

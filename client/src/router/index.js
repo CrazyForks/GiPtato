@@ -3,6 +3,9 @@ import VueRouter from 'vue-router';
 import Home from '../views/Home.vue';
 import Servers from '../views/Servers.vue';
 import Rules from '../views/Rules.vue';
+import Login from '../views/Login.vue';
+import Register from '../views/Register.vue';
+import store from '../store';
 
 Vue.use(VueRouter);
 
@@ -10,18 +13,31 @@ const routes = [
   {
     path: '/',
     name: 'home',
-    component: Home
+    component: Home,
+    meta: { requiresAuth: true }
   },
   {
     path: '/servers',
     name: 'servers',
-    component: Servers
+    component: Servers,
+    meta: { requiresAuth: true }
   },
   {
     path: '/rules/:serverId',
     name: 'rules',
     component: Rules,
-    props: true
+    props: true,
+    meta: { requiresAuth: true }
+  },
+  {
+    path: '/login',
+    name: 'login',
+    component: Login
+  },
+  {
+    path: '/register',
+    name: 'register',
+    component: Register
   }
 ];
 
@@ -29,6 +45,18 @@ const router = new VueRouter({
   mode: 'history',
   base: process.env.BASE_URL,
   routes
+});
+
+// 全局前置守卫
+router.beforeEach((to, from, next) => {
+  const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
+  const isAuthenticated = store.getters.isAuthenticated;
+  
+  if (requiresAuth && !isAuthenticated) {
+    next('/login');
+  } else {
+    next();
+  }
 });
 
 export default router; 

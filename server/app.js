@@ -16,6 +16,7 @@ console.log('======================');
 // 导入路由
 const serverRoutes = require('./routes/serverRoutes');
 const rulesRoutes = require('./routes/rulesRoutes');
+const authRoutes = require('./routes/authRoutes');
 
 // 创建Express应用
 const app = express();
@@ -72,6 +73,13 @@ if (!fs.existsSync(rulesDataPath)) {
   console.log(`规则数据文件已创建: ${rulesDataPath}`);
 }
 
+// 检查并创建用户数据文件
+const usersDataPath = path.join(dataDir, 'users.json');
+if (!fs.existsSync(usersDataPath)) {
+  fs.writeFileSync(usersDataPath, JSON.stringify({ users: [] }, null, 2));
+  console.log(`用户数据文件已创建: ${usersDataPath}`);
+}
+
 // 检查并创建脚本目录
 const scriptsDir = path.join(__dirname, 'scripts');
 if (!fs.existsSync(scriptsDir)) {
@@ -86,6 +94,7 @@ if (fs.existsSync(sourceScriptPath) && !fs.existsSync(targetScriptPath)) {
 }
 
 // API路由
+app.use('/api/auth', authRoutes);
 app.use('/api/servers', serverRoutes);
 app.use('/api/rules', rulesRoutes);
 

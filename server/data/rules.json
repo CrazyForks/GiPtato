@@ -1,23 +1,27 @@
 {
   "rules": {
     "e7c280c7-163a-48a1-8f41-bccfe99b17e4": {
-      "lastUpdate": "2025-04-19T16:20:16.896Z",
+      "lastUpdate": "2025-04-19T16:48:48.509Z",
       "data": {
-        "blockList": "文件存在 脚本不是初次运行\n\n===============\u001b[41;37m 当前已封禁 端口 \u001b[0m===============\n\n\n===============================================\n==============\u001b[41;37m 当前已封禁 关键词 \u001b[0m==============\ntorrent\n.torrent\npeer_id=\nannounce\ninfo_hash\nget_peers\nfind_node\nBitTorrent\nannounce_peer\nBitTorrent protocol\nannounce.php?passkey=\nmagnet:\nxunlei\nsandai\nThunder\nXLLiveUD\n===============================================\n\n",
+        "blockList": "文件存在 脚本不是初次运行\n\n===============\u001b[41;37m 当前已封禁 端口 \u001b[0m===============\n\n\n===============================================\n==============\u001b[41;37m 当前已封禁 关键词 \u001b[0m==============\n\n===============================================\n\n",
         "sshPortStatus": "文件存在 脚本不是初次运行\n\nSSH 端口为 22\n\n",
         "inboundPorts": {
           "tcp": [
             22,
             20222,
-            443
+            443,
+            53
           ],
           "udp": [
             22,
             20222,
-            443
+            443,
+            53
           ]
         },
-        "inboundIPs": []
+        "inboundIPs": [
+          "1.2.1.2"
+        ]
       }
     }
   }

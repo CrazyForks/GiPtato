@@ -1,12 +1,24 @@
 const express = require('express');
 const serverController = require('../controllers/serverController');
 const router = express.Router();
+const { protect } = require('../middlewares/authMiddleware');
 
-// 服务器管理路由
+// 应用认证中间件保护所有路由
+router.use(protect);
+
+// 获取所有服务器
 router.get('/', serverController.getAllServers);
-router.post('/', serverController.createServer);
+
+// 获取单个服务器
 router.get('/:id', serverController.getServer);
+
+// 添加服务器
+router.post('/', serverController.createServer);
+
+// 更新服务器
 router.put('/:id', serverController.updateServer);
+
+// 删除服务器
 router.delete('/:id', serverController.deleteServer);
 
 // 服务器连接路由
