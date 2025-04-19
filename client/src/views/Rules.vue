@@ -89,6 +89,7 @@
           
           <el-table v-loading="loadingPorts" :data="inboundPorts" style="width: 100%">
             <el-table-column prop="port" label="端口" width="180"></el-table-column>
+            <el-table-column prop="protocol" label="协议" width="100"></el-table-column>
             <el-table-column label="操作">
               <template slot-scope="scope">
                 <el-button type="danger" size="mini" @click="disallowPort(scope.row.port)">取消放行</el-button>
@@ -118,7 +119,7 @@
             <el-table-column prop="ip" label="IP地址" width="180"></el-table-column>
             <el-table-column label="操作">
               <template slot-scope="scope">
-                <el-button type="danger" size="mini" @click="disallowIP(scope.row.ip)">取消放行</el-button>
+                <el-button type="danger" size="mini" @click="disallowIP(scope.row.ip || scope.row)">取消放行</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -495,14 +496,32 @@ export default {
         const response = await this.getInboundPorts(this.serverId);
         
         if (response && response.success) {
-          this.inboundPorts = response.data || [];
+          const data = response.data || { tcp: [], udp: [] };
+          
+          // 合并TCP和UDP端口，去重并标记为"TCP|UDP"
+          const uniquePorts = [...new Set([...(data.tcp || []), ...(data.udp || [])])];
+          const formattedPorts = uniquePorts.map(port => ({ 
+            port, 
+            protocol: 'TCP|UDP' 
+          }));
+          
+          console.log('处理后的端口数据:', formattedPorts);
+          this.inboundPorts = formattedPorts;
+          
+          if (formattedPorts.length === 0) {
+            this.commandOutput = '当前无放行端口';
+          } else {
+            this.commandOutput = `成功获取端口列表，共 ${formattedPorts.length} 个端口`;
+          }
         } else {
           this.$message.warning(response?.error || '获取入网端口失败');
           this.inboundPorts = [];
+          this.commandOutput = `获取入网端口失败: ${response?.error || '未知错误'}`;
         }
       } catch (error) {
         this.$message.error(`获取入网端口错误: ${error.message}`);
         this.inboundPorts = [];
+        this.commandOutput = `获取入网端口错误: ${error.message}`;
       } finally {
         this.loadingPorts = false;
       }
@@ -536,33 +555,23 @@ export default {
           return;
         }
         
-        const ipData = response.data || '';
-        try {
-          // 尝试解析不同格式的IP数据
-          if (Array.isArray(ipData)) {
-            this.inboundIPs = ipData;
-          } else if (typeof ipData === 'string') {
-            // 尝试解析字符串形式的IP列表
-            if (ipData.trim() === '') {
-              this.inboundIPs = [];
-            } else {
-              // 尝试解析多种可能的格式
-              const lines = ipData.split('\n').filter(line => line.trim() !== '');
-              this.inboundIPs = lines.map(line => {
-                // 尝试提取IP地址
-                const ipMatch = line.match(/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b/);
-                return ipMatch ? ipMatch[0] : line.trim();
-              }).filter(ip => ip);
-            }
+        // 处理IP数据
+        const ipData = response.data || [];
+        
+        // 确保我们有一个标准格式的数组
+        if (Array.isArray(ipData)) {
+          // 将每个IP转换为对象格式，便于表格渲染
+          this.inboundIPs = ipData.map(ip => ({ ip }));
+          
+          if (ipData.length === 0) {
+            this.commandOutput = '当前无放行IP';
           } else {
-            this.inboundIPs = [];
-            this.$message.warning('IP数据格式无法识别');
+            this.commandOutput = `成功获取IP列表，共 ${ipData.length} 个IP`;
           }
-          this.commandOutput = '获取入网IP成功';
-        } catch (parseError) {
-          this.$message.warning(`解析IP数据出错: ${parseError.message}`);
+        } else {
+          this.$message.warning('IP数据格式无法识别');
           this.inboundIPs = [];
-          this.commandOutput = `解析IP数据出错: ${parseError.message}`;
+          this.commandOutput = '获取到的IP数据格式无法识别';
         }
       } catch (error) {
         this.$message.error(`获取入网IP错误: ${error.message}`);
@@ -892,12 +901,7 @@ export default {
     },
     async disallowPort(port) {
       if (!this.hasValidServerId) {
-        this.$message.error('未指定服务器ID，无法执行禁止入网操作');
-        return;
-      }
-      
-      if (!port) {
-        this.$message.warning('请指定要禁止的端口');
+        this.$message.error('未指定服务器ID，无法执行取消放行操作');
         return;
       }
       
@@ -905,17 +909,17 @@ export default {
         this.loading = true;
         const response = await this.disallowInboundPortsAction({
           serverId: this.serverId,
-          ports: port
+          ports: port.toString()
         });
         
         if (response && response.success) {
-          this.$message.success(`成功禁止入网端口: ${port}`);
+          this.$message.success(`成功取消放行端口: ${port}`);
           await this.refreshInboundPorts();
         } else {
-          this.$message.error(response?.error || '禁止入网端口失败');
+          this.$message.error(response?.error || '取消放行端口失败');
         }
       } catch (error) {
-        this.$message.error(`禁止入网端口错误: ${error.message}`);
+        this.$message.error(`取消放行端口错误: ${error.message}`);
       } finally {
         this.loading = false;
       }
@@ -953,12 +957,15 @@ export default {
     },
     async disallowIP(ip) {
       if (!this.hasValidServerId) {
-        this.$message.error('未指定服务器ID，无法执行禁止入网操作');
+        this.$message.error('未指定服务器ID，无法执行取消放行操作');
         return;
       }
       
-      if (!ip) {
-        this.$message.warning('请指定要禁止的IP地址');
+      // 确保我们有一个字符串形式的IP
+      const ipAddress = typeof ip === 'object' ? ip.ip : ip;
+      
+      if (!ipAddress) {
+        this.$message.error('无效的IP地址');
         return;
       }
       
@@ -966,17 +973,17 @@ export default {
         this.loading = true;
         const response = await this.disallowInboundIPsAction({
           serverId: this.serverId,
-          ips: ip
+          ips: ipAddress
         });
         
         if (response && response.success) {
-          this.$message.success(`成功禁止入网IP: ${ip}`);
+          this.$message.success(`成功取消放行IP: ${ipAddress}`);
           await this.refreshInboundIPs();
         } else {
-          this.$message.error(response?.error || '禁止入网IP失败');
+          this.$message.error(response?.error || '取消放行IP失败');
         }
       } catch (error) {
-        this.$message.error(`禁止入网IP错误: ${error.message}`);
+        this.$message.error(`取消放行IP错误: ${error.message}`);
       } finally {
         this.loading = false;
       }
