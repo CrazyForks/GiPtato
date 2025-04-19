@@ -1,0 +1,18 @@
+{
+  "servers": [
+    {
+      "_id": "e7c280c7-163a-48a1-8f41-bccfe99b17e4",
+      "name": "vultrjp",
+      "host": "202.182.99.221",
+      "port": 22,
+      "username": "root",
+      "authType": "password",
+      "password": "H[a3aASdCu?-fV%(",
+      "privateKey": "",
+      "status": "online",
+      "lastConnection": "2025-04-19T05:31:54.627Z",
+      "createdAt": "2025-04-19T05:03:32.275Z",
+      "updatedAt": "2025-04-19T05:31:54.628Z"
+    }
+  ]
+}
