@@ -4,7 +4,8 @@
       <h1>防火墙规则管理</h1>
       <div>
         <el-button type="primary" @click="$router.push('/servers')">返回服务器列表</el-button>
-        <el-button type="success" @click="deployIptato" :loading="deploying">部署脚本</el-button>
+        <el-button type="success" @click="deployIptatoScript" :loading="deploying">部署脚本</el-button>
+        <el-button type="danger" @click="confirmClearRules">清空所有规则</el-button>
       </div>
     </div>
 
@@ -16,6 +17,16 @@
     <el-tabs v-model="activeTab" type="card">
       <el-tab-pane label="出网控制" name="outbound">
         <el-card>
+          <div slot="header">
+            <span>当前封禁列表</span>
+            <el-button style="float: right; padding: 3px 0" type="text" @click="refreshBlockList">刷新</el-button>
+          </div>
+          
+          <pre v-if="blockList" class="output">{{ blockList }}</pre>
+          <div v-else>加载中...</div>
+        </el-card>
+
+        <el-card style="margin-top: 20px;">
           <div slot="header">
             <span>封禁管理</span>
           </div>
@@ -83,6 +94,16 @@
       <el-tab-pane label="入网控制" name="inbound">
         <el-card>
           <div slot="header">
+            <span>SSH端口状态</span>
+            <el-button style="float: right; padding: 3px 0" type="text" @click="refreshSSHPort">刷新</el-button>
+          </div>
+          
+          <pre v-if="sshPortStatus" class="output">{{ sshPortStatus }}</pre>
+          <div v-else>加载中...</div>
+        </el-card>
+
+        <el-card style="margin-top: 20px;">
+          <div slot="header">
             <span>入网端口管理</span>
             <el-button style="float: right; padding: 3px 0" type="text" @click="refreshInboundPorts">刷新</el-button>
           </div>
@@ -92,7 +113,10 @@
             <el-table-column prop="protocol" label="协议" width="100"></el-table-column>
             <el-table-column label="操作">
               <template slot-scope="scope">
-                <el-button type="danger" size="mini" @click="disallowPort(scope.row.port)">取消放行</el-button>
+                <el-tooltip v-if="isSshPort(scope.row.port)" content="不能取消SSH端口放行，这可能导致无法连接服务器" placement="top">
+                  <el-button type="danger" size="mini" disabled>取消放行</el-button>
+                </el-tooltip>
+                <el-button v-else type="danger" size="mini" @click="disallowPort(scope.row.port)">取消放行</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -134,36 +158,6 @@
               <el-button type="primary" @click="allowIP" :loading="loading">添加</el-button>
             </el-form-item>
           </el-form>
-        </el-card>
-      </el-tab-pane>
-
-      <el-tab-pane label="状态查看" name="status">
-        <el-card>
-          <div slot="header">
-            <span>当前封禁列表</span>
-            <el-button style="float: right; padding: 3px 0" type="text" @click="refreshBlockList">刷新</el-button>
-          </div>
-          
-          <pre v-if="blockList" class="output">{{ blockList }}</pre>
-          <div v-else>加载中...</div>
-        </el-card>
-
-        <el-card style="margin-top: 20px;">
-          <div slot="header">
-            <span>SSH端口状态</span>
-            <el-button style="float: right; padding: 3px 0" type="text" @click="refreshSSHPort">刷新</el-button>
-          </div>
-          
-          <pre v-if="sshPortStatus" class="output">{{ sshPortStatus }}</pre>
-          <div v-else>加载中...</div>
-        </el-card>
-
-        <el-card style="margin-top: 20px;">
-          <div slot="header">
-            <span>重置</span>
-          </div>
-          
-          <el-button type="danger" @click="confirmClearRules">清空所有规则</el-button>
         </el-card>
       </el-tab-pane>
     </el-tabs>
@@ -232,6 +226,7 @@
     <el-card style="margin-top: 20px;">
       <div slot="header">
         <span>调试工具</span>
+        <el-button style="float: right; padding: 3px 0" type="text" @click="debugInfo = ''">清空</el-button>
       </div>
       <el-button type="warning" @click="checkScriptExistence" :loading="debugging">检查脚本存在</el-button>
       <el-button type="warning" @click="testServerConnection" :loading="debugging">测试服务器连接</el-button>
@@ -268,6 +263,7 @@ export default {
       server: null,
       blockList: '',
       sshPortStatus: '',
+      sshPort: null,
       inboundPorts: [],
       inboundIPs: [],
       commandOutput: '',
@@ -308,6 +304,9 @@ export default {
     }
   },
   async created() {
+    // 设置默认标签页为出网控制
+    this.activeTab = 'outbound';
+    
     if (this.hasValidServerId) {
       await this.checkInitialization();
     } else {
@@ -474,6 +473,28 @@ export default {
         
         if (response && response.success) {
           this.sshPortStatus = response.data || '无SSH端口数据';
+          
+          // 尝试从响应中提取SSH端口
+          try {
+            const sshData = response.data;
+            if (sshData && typeof sshData === 'string') {
+              // 尝试从字符串中匹配端口号
+              const portMatch = sshData.match(/SSH端口\s*[:：]\s*(\d+)/i) || 
+                              sshData.match(/端口\s*[:：]\s*(\d+)/i) || 
+                              sshData.match(/port\s*[:：]\s*(\d+)/i);
+              if (portMatch && portMatch[1]) {
+                this.sshPort = parseInt(portMatch[1], 10);
+                console.log(`已识别SSH端口: ${this.sshPort}`);
+              }
+            }
+          } catch (parseError) {
+            console.error('解析SSH端口数据出错:', parseError);
+            // 默认使用服务器配置中的端口
+            if (this.server && this.server.port) {
+              this.sshPort = this.server.port;
+              console.log(`使用服务器配置的端口: ${this.sshPort}`);
+            }
+          }
         } else {
           this.$message.warning(response?.error || '获取SSH端口失败');
           this.sshPortStatus = '获取SSH端口失败';
@@ -902,6 +923,12 @@ export default {
     async disallowPort(port) {
       if (!this.hasValidServerId) {
         this.$message.error('未指定服务器ID，无法执行取消放行操作');
+        return;
+      }
+      
+      // 检查是否是SSH端口
+      if (this.isSshPort(port)) {
+        this.$message.error('不能取消SSH端口的放行，这可能导致无法连接服务器');
         return;
       }
       
@@ -1402,6 +1429,48 @@ export default {
       } finally {
         this.debugging = false;
       }
+    },
+    async deployIptatoScript() {
+      if (!this.hasValidServerId) {
+        this.$message.error('未指定服务器ID，无法执行部署操作');
+        return;
+      }
+      
+      try {
+        this.deploying = true;
+        this.commandOutput = '正在部署脚本...\n';
+        
+        const response = await this.deployIptato(this.serverId);
+        
+        if (response && response.success) {
+          this.$message.success('脚本部署成功');
+          this.commandOutput += '\n脚本部署成功';
+        } else {
+          const errorMsg = response?.error || '脚本部署失败';
+          this.$message.error(`脚本部署失败: ${errorMsg}`);
+          this.commandOutput += `\n脚本部署失败: ${errorMsg}`;
+        }
+      } catch (error) {
+        this.$message.error(`脚本部署错误: ${error.message}`);
+        this.commandOutput += `\n脚本部署错误: ${error.message}`;
+      } finally {
+        this.deploying = false;
+      }
+    },
+    isSshPort(port) {
+      // 首先检查是否有从API获取的SSH端口
+      if (this.sshPort && this.sshPort === parseInt(port, 10)) {
+        return true;
+      }
+      
+      // 然后检查服务器配置中的端口
+      if (this.server && this.server.port === parseInt(port, 10)) {
+        return true;
+      }
+      
+      // 常见的SSH端口
+      const commonSshPorts = [22, 2222];
+      return commonSshPorts.includes(parseInt(port, 10));
     }
   }
 };
