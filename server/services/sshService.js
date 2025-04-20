@@ -572,8 +572,24 @@ class SSHService {
       const hasSudo = checkSudo.stdout.includes('has_sudo');
       console.log(`用户${hasSudo ? '有' : '没有'}sudo权限`);
       
-      // 首先下载到用户主目录
-      const downloadCommand = 'cd ~ && wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh';
+      // 首先检测网络环境
+      const checkNetworkCommand = 'ping -c2 -i0.3 -W1 www.google.com &>/dev/null && echo "global" || echo "china"';
+      console.log(`检测网络环境: ${checkNetworkCommand}`);
+      
+      const networkEnv = await this.executeCommand(serverId, checkNetworkCommand);
+      let downloadUrl = '';
+      
+      // 根据网络环境选择下载URL
+      if (networkEnv.stdout.includes('china')) {
+        console.log('检测到国内网络环境，使用代理下载...');
+        downloadUrl = 'https://gh-proxy.com/raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh';
+      } else {
+        console.log('检测到可直接访问国际网络，使用原始URL下载...');
+        downloadUrl = 'https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh';
+      }
+      
+      // 构建下载命令，添加重试机制
+      const downloadCommand = `cd ~ && wget -N --no-check-certificate --tries=3 --timeout=15 ${downloadUrl} -O iPtato.sh && chmod +x iPtato.sh`;
       console.log(`执行下载命令: ${downloadCommand}`);
       
       // 执行下载命令
@@ -582,7 +598,21 @@ class SSHService {
       if (result.code !== 0) {
         console.error(`下载脚本时发生错误，退出码: ${result.code}`);
         console.error(`标准错误: ${result.stderr}`);
-        throw new Error(`下载脚本失败: ${result.stderr || '未知错误'}`);
+        
+        // 如果失败，尝试使用备用URL
+        console.log('尝试使用备用方法下载...');
+        const fallbackCommand = networkEnv.stdout.includes('china') 
+          ? `cd ~ && curl -o iPtato.sh https://cdn.jsdelivr.net/gh/Fiftonb/GiPtato@main/iPtato.sh && chmod +x iPtato.sh`
+          : `cd ~ && curl -o iPtato.sh https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh`;
+          
+        console.log(`执行备用下载命令: ${fallbackCommand}`);
+        const fallbackResult = await this.executeCommand(serverId, fallbackCommand);
+        
+        if (fallbackResult.code !== 0) {
+          console.error(`备用下载也失败，退出码: ${fallbackResult.code}`);
+          console.error(`标准错误: ${fallbackResult.stderr}`);
+          throw new Error(`下载脚本失败: ${fallbackResult.stderr || '未知错误'}`);
+        }
       }
       
       // 验证脚本是否下载成功到用户目录
