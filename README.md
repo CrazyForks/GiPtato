@@ -175,6 +175,8 @@ wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/GiPtato
 
 # iPtato
 通过简单的脚本，实现控制系统的出入网络流量
+使用文档[iPtato readme](https://github.com/Aipblock/iPtato/blob/main/README.md)
+
 ## 功能简介
 ### 适配系统
 Debian\Centos\Ubuntu
