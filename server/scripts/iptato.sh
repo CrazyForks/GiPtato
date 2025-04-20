@@ -855,11 +855,61 @@ clear_rebuild_ipta() {
 	echo "仅放行了 SSH端口：${PORT}"
 }
 
-Update_Shell(){
-	sh_new_ver=$(wget --no-check-certificate -qO- -t1 -T3 "https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh"|grep 'sh_ver="'|awk -F "=" '{print $NF}'|sed 's/\"//g'|head -1)
-	[[ -z ${sh_new_ver} ]] && echo -e "${Error} 无法链接到 Github !" && exit 0
-	wget -N --no-check-certificate https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh && chmod +x iPtato.sh && bash iPtato.sh
-	echo -e "脚本已更新为最新版本[ ${sh_new_ver} ] !(注意：因为更新方式为直接覆盖当前运行的脚本，所以可能下面会提示一些报错，无视即可)" && exit 0
+check_network_env() {
+	# 检测是否能连接到Google，判断是否在国内网络
+	ping -c2 -i0.3 -W1 www.google.com &>/dev/null
+	if [ $? -eq 0 ]; then
+		# 能连接到Google，可能在国外或使用了代理
+		echo "检测到可直接访问国际网络"
+		IN_CHINA=0
+	else
+		# 不能连接到Google，可能在国内
+		echo "检测到当前可能处于国内网络环境"
+		IN_CHINA=1
+	fi
+}
+
+Update_Shell() {
+	# 检测网络环境
+	check_network_env
+	
+	# 根据网络环境选择不同的URL
+	if [ $IN_CHINA -eq 1 ]; then
+		DOWNLOAD_URL="https://gh-proxy.com/raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh"
+		VERSION_URL="https://gh-proxy.com/raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh"
+		echo "使用国内GitHub代理加速更新..."
+	else
+		DOWNLOAD_URL="https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh"
+		VERSION_URL="https://raw.githubusercontent.com/Fiftonb/GiPtato/refs/heads/main/iPtato.sh"
+		echo "使用GitHub直接更新..."
+	fi
+	
+	# 获取最新版本号
+	sh_new_ver=$(wget --no-check-certificate -qO- -t2 -T3 "${VERSION_URL}" | grep 'sh_ver="' | awk -F "=" '{print $NF}' | sed 's/\"//g' | head -1)
+	[[ -z ${sh_new_ver} ]] && echo -e "${Error} 无法连接到更新服务器，请检查网络或稍后再试！" && exit 0
+	
+	# 比较版本
+	if [[ "${sh_new_ver}" != "${sh_ver}" ]]; then
+		echo -e "检测到新版本[ ${sh_new_ver} ]，当前版本[ ${sh_ver} ]"
+		echo -e "是否更新？[Y/n]"
+		read -e -p "(默认: y):" yn
+		[[ -z "${yn}" ]] && yn="y"
+		if [[ ${yn} == [Yy] ]]; then
+			wget -N --no-check-certificate ${DOWNLOAD_URL} -O iPtato.sh.new
+			if [ $? -eq 0 ]; then
+				mv iPtato.sh.new iPtato.sh
+				chmod +x iPtato.sh
+				echo -e "脚本已更新为最新版本[ ${sh_new_ver} ] !\n运行 bash iPtato.sh 启动最新版本"
+			else
+				echo -e "${Error} 下载新版本失败，请稍后再试"
+			fi
+		else
+			echo "已取消更新，继续使用当前版本[ ${sh_ver} ]"
+		fi
+	else
+		echo -e "当前已经是最新版本[ ${sh_new_ver} ]"
+	fi
+	exit 0
 }
 
 # 使用方法帮助
